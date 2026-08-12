@@ -1,0 +1,332 @@
+# Go RESTful API — Project Skeleton Rules
+
+Use this as the default blueprint when scaffolding or extending a production-ready Go RESTful API.
+Prefer this layout and conventions over flat `controller/` / `service/` / `repository/` packages.
+
+## Project Layout (required)
+
+```
+my-api-project/
+├── cmd/
+│   └── api/
+│       └── main.go              # Entry point: config, DB, DI wiring, router, server
+├── internal/
+│   ├── config/
+│   │   └── config.go            # Env vars & config loading
+│   ├── database/
+│   │   └── postgres.go          # DB pool init (*sql.DB)
+│   ├── <feature>/               # One package per domain (e.g. product, category)
+│   │   ├── handler.go           # HTTP transport (request/response, routing hooks)
+│   │   ├── service.go           # Business logic, validation, transactions
+│   │   ├── repository.go        # SQL / data access
+│   │   └── model.go             # Domain entities + request/response DTOs
+│   ├── middleware/
+│   │   └── auth.go              # Auth / JWT / API-key middleware
+│   └── response/
+│       └── response.go          # Unified JSON envelope & error helpers
+├── migrations/
+│   └── 000001_init.up.sql
+├── .env
+├── go.mod
+├── go.sum
+└── Makefile
+```
+
+### Layout rules
+
+- Put **only** `main` bootstrapping in `cmd/api/main.go`. No business logic there.
+- All app code lives under `internal/` (not importable by external modules).
+- Organize by **feature/domain**, not by technical layer across the whole repo.
+- Shared cross-cutting concerns (`config`, `database`, `middleware`, `response`) stay in their own packages — do not duplicate them inside features.
+- Do **not** create top-level `controller/`, `service/`, `repository/`, `helper/`, or `app/` packages in new projects.
+
+---
+
+## Architecture & Data Flow
+
+```
+HTTP Request
+  → middleware (auth, logging, recovery)
+  → handler (decode/bind, call service, write response)
+  → service (validate, begin tx, business rules, call repository)
+  → repository (SQL via ctx + *sql.Tx / *sql.DB)
+  → domain model
+  → service maps to response DTO
+  → handler wraps in unified JSON envelope
+```
+
+Dependencies point **inward**:
+
+- `handler` → `service` (interface)
+- `service` → `repository` (interface)
+- `repository` → DB only
+- `cmd/api` wires concrete types (constructor DI)
+
+Never import `handler` from `service` or `repository`. Never call SQL from `handler` or put HTTP types in `repository`.
+
+---
+
+## Layer Responsibilities
+
+### `cmd/api/main.go`
+
+- Load config, open DB, build validator, construct repository → service → handler.
+- Register routes and middleware.
+- Start `http.Server` with sensible timeouts.
+- Panic only on fatal startup failures.
+
+### `internal/<feature>/handler.go` (transport)
+
+- Decode JSON body / path / query params.
+- Call service with `request.Context()`.
+- Map results to the unified response envelope.
+- No business rules, no SQL, no transactions.
+
+### `internal/<feature>/service.go` (business)
+
+- Validate input (`go-playground/validator` struct tags).
+- Own transaction boundaries (`Begin` + commit/rollback).
+- Orchestrate repository calls and domain rules.
+- Map domain entities ↔ DTOs.
+- Accept repository via **interface**, not concrete struct.
+
+### `internal/<feature>/repository.go` (data)
+
+- Execute parameterized SQL with `context.Context`.
+- Prefer `*sql.Tx` when called inside a service transaction.
+- Return domain models / errors — never HTTP status codes or JSON envelopes.
+
+### `internal/<feature>/model.go`
+
+- Domain entity structs (table-shaped).
+- Request DTOs with `json` + `validate` tags.
+- Response DTOs with `json` tags.
+- Keep feature models inside the feature package (no global `model/web` dump).
+
+### `internal/response`
+
+All handlers MUST return JSON via these helpers (Go equivalent of the PHP helpers below). Do not invent ad-hoc response shapes.
+
+**JSON encode flags (always):** unescape Unicode, unescape `/`, preserve zero fractions (match PHP `JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION`).
+
+#### Helper API (implement in `response.go`)
+
+| Helper | Use when | HTTP status | Body |
+|--------|----------|-------------|------|
+| `WithData(w, data, message?)` | Single resource or non-paginated list | 200 | `{ "message"?, "data" }` |
+| `WithPaginatedData(w, data, meta, links, message?)` | Paginated `/list` endpoints | 200 | `{ "message"?, "data", "meta"?, "links"? }` |
+| `WithMessage(w, message, status?)` | Success/ack with no payload (default 200) | status | `{ "message" }` |
+| `Error(w, message, status?)` | Failures (default 400) | status | `{ "message" }` |
+
+```go
+// Template — internal/response/response.go
+package response
+
+type Meta struct {
+	CurrentPage int    `json:"current_page"`
+	From        *int   `json:"from"`
+	LastPage    int    `json:"last_page"`
+	Path        string `json:"path"`
+	PerPage     int    `json:"per_page"`
+	To          *int   `json:"to"`
+	Total       int64  `json:"total"`
+	// Echo applied list query so clients can rehydrate UI state
+	Search  string         `json:"search,omitempty"`
+	Sort    string         `json:"sort,omitempty"`
+	Order   string         `json:"order,omitempty"` // asc | desc
+	Filters map[string]any `json:"filters,omitempty"`
+}
+
+type Links struct {
+	First string  `json:"first"`
+	Last  string  `json:"last"`
+	Prev  *string `json:"prev"`
+	Next  *string `json:"next"`
+}
+
+// WithData        → { "message"?: "...", "data": ... }
+// WithPaginatedData → { "message"?: "...", "data": [...], "meta": {...}, "links": {...} }
+// WithMessage     → { "message": "..." }
+// Error           → { "message": "..." }
+```
+
+#### Non-paginated success
+
+```json
+{
+  "message": "Product created",
+  "data": { "id": 1, "name": "Widget" }
+}
+```
+
+`message` is optional — omit the key when not provided.
+
+#### Message-only / error
+
+```json
+{ "message": "Product deleted" }
+```
+
+```json
+{ "message": "Product not found" }
+```
+
+#### Paginated list (`GET /api/<resources>` or `/list`)
+
+**Request query parameters (standard — support all of these):**
+
+| Param | Example | Meaning |
+|-------|---------|---------|
+| `page` | `?page=2` | 1-based page index (default `1`) |
+| `per_page` | `?per_page=15` | Page size (default `15`, cap e.g. `100`) |
+| `search` | `?search=widget` | Free-text search across allowed columns |
+| `sort` | `?sort=created_at` | Sort column (whitelist in service) |
+| `order` | `?order=desc` | `asc` \| `desc` (default `asc`) |
+| `filter[<field>]` | `?filter[status]=active&filter[category_id]=3` | Exact/enum filters |
+
+Example request:
+
+```http
+GET /api/products?page=2&per_page=15&search=widget&sort=created_at&order=desc&filter[status]=active&filter[category_id]=3
+```
+
+**Response shape:**
+
+```json
+{
+  "message": "Products retrieved",
+  "data": [
+    { "id": 16, "name": "Widget Pro", "status": "active" },
+    { "id": 17, "name": "Widget Air", "status": "active" }
+  ],
+  "meta": {
+    "current_page": 2,
+    "from": 16,
+    "last_page": 10,
+    "path": "/api/products",
+    "per_page": 15,
+    "to": 30,
+    "total": 142,
+    "search": "widget",
+    "sort": "created_at",
+    "order": "desc",
+    "filters": {
+      "status": "active",
+      "category_id": "3"
+    }
+  },
+  "links": {
+    "first": "/api/products?page=1&per_page=15&search=widget&sort=created_at&order=desc&filter[status]=active&filter[category_id]=3",
+    "last": "/api/products?page=10&per_page=15&search=widget&sort=created_at&order=desc&filter[status]=active&filter[category_id]=3",
+    "prev": "/api/products?page=1&per_page=15&search=widget&sort=created_at&order=desc&filter[status]=active&filter[category_id]=3",
+    "next": "/api/products?page=3&per_page=15&search=widget&sort=created_at&order=desc&filter[status]=active&filter[category_id]=3"
+  }
+}
+```
+
+**List endpoint rules:**
+
+- Parse query params in the **handler**; pass a typed `ListQuery` (page, per_page, search, sort, order, filters) into the **service**.
+- Whitelist `sort` columns and `filter` keys in the service — never pass raw client field names into SQL.
+- `links.*` MUST preserve the same `search`, `sort`, `order`, `per_page`, and `filter[*]` query string; only `page` changes.
+- `meta.from` / `meta.to` are `null` when `data` is empty.
+- `links.prev` / `links.next` are `null` on the first / last page.
+- Empty result is still `200` with `"data": []` and correct `meta.total` (usually `0`).
+
+### `internal/config` & `internal/database`
+
+- Read from environment (`.env` for local; never hardcode DSN in source).
+- Configure pool: max open/idle conns, conn max lifetime / idle time.
+- Default DB driver for new projects: **PostgreSQL** (`pgx` or `lib/pq` + `database/sql`).
+
+### `internal/middleware`
+
+- Auth (JWT / API key), request ID, recovery, CORS as needed.
+- Middleware wraps the router/handler chain in `main`; features do not reimplement auth.
+
+### `migrations/`
+
+- Numbered SQL migrations (`000001_*.up.sql` / `*.down.sql`).
+- Schema changes only via migrations — never “create table” in app startup code.
+
+---
+
+## Coding Conventions
+
+### Interfaces & constructors
+
+- Define interfaces next to the consumer or in the same feature package (`Service`, `Repository`).
+- Export constructors: `NewRepository()`, `NewService(repo, db, validate)`, `NewHandler(service)`.
+- Wire everything in `cmd/api/main.go` (manual DI — no DI framework required).
+
+### Context & errors
+
+- Pass `context.Context` as the first argument on service and repository methods.
+- Use parameterized queries only (`$1`, `$2` for Postgres — never string-concat user input).
+- Prefer returning `error` from repository/service for expected failures (e.g. not found).
+- Use panic + recovery middleware only for unexpected failures, consistent with a single error strategy across the project.
+
+### Validation
+
+- Validate request structs in the **service** layer with `validator.Validate`.
+- Tags live on request DTOs, e.g. `validate:"required,max=200,min=1"`.
+
+### HTTP API style
+
+- Prefix routes with `/api`.
+- Resource-oriented paths: `/api/products`, `/api/products/:productId`.
+- Methods: `GET` list/detail, `POST` create, `PUT`/`PATCH` update, `DELETE` delete.
+- List endpoints accept `page`, `per_page`, `search`, `sort`, `order`, and `filter[<field>]` query params; respond with `WithPaginatedData`.
+- Prefer `httprouter` or `chi`/`echo` — pick one router and stay consistent.
+- Handler signatures stay thin; route registration can live in `handler.go` (`RegisterRoutes`) or `main.go`.
+
+### Naming
+
+- Packages: short, lowercase, no underscores (`product`, `config`).
+- Files: `handler.go`, `service.go`, `repository.go`, `model.go`.
+- Exported types: `Product`, `CreateRequest`, `Response`, `Service`, `Repository`, `Handler`.
+
+### Makefile (expected targets)
+
+- `make run` — run API
+- `make build` — compile binary
+- `make migrate-up` / `make migrate-down` — apply migrations
+- `make test` — run tests
+
+---
+
+## Adding a New Feature (checklist)
+
+1. Create `internal/<feature>/` with `model.go`, `repository.go`, `service.go`, `handler.go`.
+2. Add migrations under `migrations/` if schema changes.
+3. Define repository + service interfaces; implement with constructors.
+4. Register routes and wire DI in `cmd/api/main.go`.
+5. Return all payloads through `internal/response`.
+6. Protect private routes with `internal/middleware` when needed.
+
+---
+
+## Do Not
+
+- Put business logic in handlers or SQL in services/handlers.
+- Share mutable global DB/state without constructors.
+- Commit secrets, real credentials, or production `.env` values.
+- Mix multiple response JSON shapes for success/error.
+- Create anemic global `helper` dumping grounds — keep helpers next to the concern (`response`, `database`, or the feature).
+- Import another feature’s unexported internals; extract shared code to `internal/` shared packages only when truly cross-cutting.
+
+---
+
+## Stack defaults (unless the user overrides)
+
+| Concern        | Default                                      |
+|----------------|----------------------------------------------|
+| Language       | Go (module mode)                             |
+| HTTP           | `net/http` + `httprouter` (or chi)           |
+| DB             | PostgreSQL + `database/sql`                  |
+| Validation     | `github.com/go-playground/validator/v10`     |
+| Config         | Env vars via `.env` + small config loader    |
+| Migrations     | SQL files in `migrations/` (golang-migrate)  |
+| Response       | `WithData` / `WithPaginatedData` / `WithMessage` / `Error` |
+
+When generating code, match this skeleton and these conventions unless the user explicitly asks otherwise.

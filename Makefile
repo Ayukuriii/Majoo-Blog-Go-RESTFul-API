@@ -1,0 +1,28 @@
+.PHONY: run build test migrate-up migrate-down
+
+APP_NAME := blog-api
+MIGRATE  ?= migrate
+MIGRATIONS_DIR := migrations
+
+# Load .env if present (Make does not export by default for recipes).
+ifneq (,$(wildcard .env))
+    include .env
+    export
+endif
+
+DATABASE_URL ?= mysql://$(DB_USER):$(DB_PASSWORD)@tcp($(DB_HOST):$(DB_PORT))/$(DB_NAME)?multiStatements=true
+
+run:
+	go run ./cmd/api
+
+build:
+	go build -o bin/$(APP_NAME) ./cmd/api
+
+test:
+	go test ./...
+
+migrate-up:
+	$(MIGRATE) -path $(MIGRATIONS_DIR) -database "$(DATABASE_URL)" up
+
+migrate-down:
+	$(MIGRATE) -path $(MIGRATIONS_DIR) -database "$(DATABASE_URL)" down 1

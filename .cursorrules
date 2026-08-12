@@ -353,6 +353,54 @@ Full rationale: [`docs/architecture.md`](docs/architecture.md) §8.
 5. Return all payloads through `internal/response` with `public_id` only.
 6. Protect private routes with `internal/middleware` (JWT) when needed.
 7. For relations: resolve `public_id` → validate → use internal `id`.
+8. Add `test/http/<feature>.http` covering every new endpoint (positive + negative); see HTTP request tests.
+
+---
+
+## HTTP request tests (`test/http/`)
+
+Manual API checks for the REST Client / `.http` runner. One file per feature (or per resource group).
+
+### Layout
+
+```
+test/http/
+├── health.http          # example — follow this style
+├── auth.http            # future
+└── posts.http           # future
+```
+
+### Rules
+
+- Create or update a `.http` file whenever you add or change an HTTP endpoint.
+- Cover **positive** (happy path) and **negative** (validation, not found, unauthorized, wrong method, bad body) cases for each endpoint.
+- Reuse shared vars at the top: `@baseUrl`, `@contentJson`, and feature-specific tokens / `public_id`s.
+- Name sections with `### Positive: ...` / `### Negative: ...` so intent is obvious.
+- Paths use `public_id` only; never numeric database `id`.
+- Auth-protected routes: include a negative case without / with invalid JWT, and a positive case with `Authorization: Bearer {{token}}`.
+- Reference style: [`test/http/health.http`](test/http/health.http).
+
+### Minimal template
+
+```http
+@baseUrl = http://localhost:8080
+@contentJson = application/json
+
+### Positive: GET /api/<resource>/{publicId}
+GET {{baseUrl}}/api/<resource>/{{publicId}}
+Accept: {{contentJson}}
+
+### Negative: GET /api/<resource>/{publicId} — not found
+GET {{baseUrl}}/api/<resource>/01INVALID00000000000000000
+Accept: {{contentJson}}
+
+### Negative: POST /api/<resource> — validation error
+POST {{baseUrl}}/api/<resource>
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+
+{}
+```
 
 ---
 

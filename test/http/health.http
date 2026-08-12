@@ -1,0 +1,24 @@
+@baseUrl = http://localhost:8080
+@contentJson = application/json
+
+### Positive: GET /health — healthy
+GET {{baseUrl}}/health
+Accept: {{contentJson}}
+
+### Negative: POST /health — method not allowed
+POST {{baseUrl}}/health
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+
+### Negative: PUT /health — method not allowed
+PUT {{baseUrl}}/health
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+
+### Negative: DELETE /health — method not allowed
+DELETE {{baseUrl}}/health
+Accept: {{contentJson}}
+
+### Negative: GET /healthz — not found
+GET {{baseUrl}}/healthz
+Accept: {{contentJson}}

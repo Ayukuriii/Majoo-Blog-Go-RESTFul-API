@@ -1,4 +1,4 @@
-.PHONY: run build test migrate-up migrate-down
+.PHONY: run build test migrate-up migrate-down docker-up docker-down
 
 APP_NAME := blog-api
 MIGRATE  ?= migrate
@@ -26,3 +26,9 @@ migrate-up:
 
 migrate-down:
 	$(MIGRATE) -path $(MIGRATIONS_DIR) -database "$(DATABASE_URL)" down 1
+
+docker-up:
+	docker compose up --build -d
+
+docker-down:
+	docker compose down

@@ -1,0 +1,17 @@
+.git
+.cursor
+.idea
+.vscode
+.bin
+bin/
+dist/
+*.md
+.env
+.env.*
+!.env.example
+test/
+docs/
+**/__debug_bin*
+*.test
+coverage.*
+.DS_Store

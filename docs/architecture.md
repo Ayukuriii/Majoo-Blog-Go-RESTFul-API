@@ -13,7 +13,7 @@ This document records the stack and design choices for the Majoo Blog RESTful AP
 | Password hashing | bcrypt | `golang.org/x/crypto/bcrypt` |
 | Auth tokens | JWT | `github.com/golang-jwt/jwt/v5` |
 | Request validation | Struct tags | `github.com/go-playground/validator/v10` |
-| Public identifiers | `public_id` | Opaque ID in API; numeric `id` stays internal PK |
+| Public identifiers | `public_id` (UUID v7) | Opaque time-ordered UUID in API; numeric `id` stays internal PK |
 
 ---
 
@@ -158,15 +158,19 @@ This document records the stack and design choices for the Majoo Blog RESTful AP
 
 ---
 
-## 8. `public_id` as the public-facing identifier
+## 8. `public_id` as the public-facing identifier (UUID v7)
 
-**Decision:** Every externally addressable resource has a `public_id` (opaque, non-sequential identifier). The numeric `id` remains the primary key and is used only inside the database and application internals. **Never expose raw database `id` in API paths, request bodies, or response JSON.**
+**Decision:** Every externally addressable resource has a `public_id` generated as a **[UUID version 7](https://www.rfc-editor.org/rfc/rfc9562.html#name-uuid-version-7)** (RFC 9562). The numeric `id` remains the primary key and is used only inside the database and application internals. **Never expose raw database `id` in API paths, request bodies, or response JSON.**
 
 ### Why
 
 - Sequential integer IDs leak growth metrics and enable easy enumeration (`/posts/1`, `/posts/2`, …).
 - Opaque public IDs reduce IDOR-style probing and hide internal row ordering.
 - Keeping a numeric PK preserves efficient joins, indexes, and foreign keys (including GORM associations).
+- **UUID v7** is preferred over UUID v4 or ULID because it is:
+  - a standard UUID (RFC 9562) with familiar 8-4-4-4-12 string form
+  - time-ordered (Unix epoch ms in the high bits), which sorts better in indexes and logs than random UUIDs
+  - still not guessable like auto-increment integers (random bits after the timestamp)
 
 ### Schema pattern
 
@@ -175,15 +179,17 @@ Typical columns on a resource table:
 | Column | Role |
 |--------|------|
 | `id` | Internal PK (`BIGINT` / auto-increment). Used in FKs (`post_id`, `user_id`, …). |
-| `public_id` | Unique, indexed public identifier (e.g. UUID or ULID). Appears in URLs and JSON as `public_id` (or resource-specific name like `post_public_id` only if needed). |
+| `public_id` | Unique, indexed public identifier — **UUID v7** (CHAR(36) or BINARY(16)). Appears in URLs and JSON as `public_id` (or resource-specific name like `post_public_id` only if needed). |
 | Domain columns | `title`, `body`, `is_active`, timestamps, etc. |
 
 Foreign keys between tables always reference **`id`**, never `public_id`.
 
+Generate `public_id` in the **service** (or a small shared helper) when creating a resource — do not accept client-supplied `public_id` on create unless there is an explicit idempotency design.
+
 ### API surface
 
 - Paths: `/api/posts/{publicId}`, `/api/comments/{publicId}`, …
-- JSON: `"public_id": "..."`, never `"id": 1`.
+- JSON: `"public_id": "0190f0e2-8c3a-7b2d-9e4f-1a2b3c4d5e6f"`, never `"id": 1`.
 - Clients send parent references by **parent `public_id`** (e.g. create comment with `post_public_id`), not parent numeric id.
 
 ### Resolve flow (child → parent / related record)
@@ -191,7 +197,7 @@ Foreign keys between tables always reference **`id`**, never `public_id`.
 When a request references another record by public identifier (path param or body field), the service follows this order:
 
 1. **Lookup by `public_id`**  
-   Load the referenced row (e.g. post) via GORM using the opaque id from the client.
+   Load the referenced row (e.g. post) via GORM using the UUID v7 from the client.
 
 2. **Validate the record**  
    Apply business rules before using it as a relation target, for example:
@@ -205,7 +211,7 @@ When a request references another record by public identifier (path param or bod
    (e.g. insert comment with `post_id = 1` where `1` is the post’s PK — never returned to the client).
 
 ```
-Client: POST /api/comments  { "post_public_id": "01H...", "body": "..." }
+Client: POST /api/comments  { "post_public_id": "0190f0e2-8c3a-7b2d-9e4f-1a2b3c4d5e6f", "body": "..." }
                 │
                 ▼
 Service: gorm Find post WHERE public_id = ?
@@ -217,7 +223,7 @@ Service: gorm Find post WHERE public_id = ?
          comment.post_id = post.id   // internal only
                 │
                 ▼
-Response: { "data": { "public_id": "...", "body": "...", ... } }  // no numeric ids
+Response: { "data": { "public_id": "0191a2b3-...", "body": "...", ... } }  // UUID v7; no numeric ids
 ```
 
 ### Reading nested resources
@@ -234,6 +240,7 @@ Same rule when listing or loading children:
 - Put `id` on response DTOs or in JWT claims meant for clients.
 - Accept numeric database ids from the client for lookups or FK assignment.
 - Treat client-supplied `public_id` as a foreign key — always resolve → validate → use internal `id`.
+- Use UUID v4, ULID, or other formats for new `public_id` values — stick to UUID v7.
 
 ---
 

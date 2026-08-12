@@ -73,16 +73,26 @@ func (s *service) List(ctx context.Context, q ListQuery) ([]PostResponse, respon
 	if err != nil {
 		return nil, response.Meta{}, response.Links{}, err
 	}
-	page, perPage := normalizePage(q.Page, q.PerPage)
-	authorIDs := make(map[uint64]string, len(posts))
+
+	authors, err := s.users.GetByIDs(ctx, uniqueAuthorIDs(posts))
+	if err != nil {
+		return nil, response.Meta{}, response.Links{}, err
+	}
+	byID := make(map[uint64]string, len(authors))
+	for i := range authors {
+		byID[authors[i].ID] = authors[i].PublicID
+	}
+
 	out := make([]PostResponse, 0, len(posts))
 	for i := range posts {
-		authorPublicID, err := s.authorPublicID(ctx, authorIDs, posts[i].AuthorID)
-		if err != nil {
-			return nil, response.Meta{}, response.Links{}, err
+		authorPublicID, ok := byID[posts[i].AuthorID]
+		if !ok {
+			return nil, response.Meta{}, response.Links{}, user.ErrNotFound
 		}
 		out = append(out, toPostResponse(&posts[i], authorPublicID))
 	}
+
+	page, perPage := normalizePage(q.Page, q.PerPage)
 	meta, links := buildPage(q, page, perPage, len(out), total)
 	return out, meta, links, nil
 }
@@ -158,17 +168,21 @@ func (s *service) ownedPost(ctx context.Context, repo Repository, users user.Rep
 	}
 	return p, author, nil
 }
-func (s *service) authorPublicID(ctx context.Context, cache map[uint64]string, authorID uint64) (string, error) {
-	if id, ok := cache[authorID]; ok {
-		return id, nil
+
+func uniqueAuthorIDs(posts []Post) []uint64 {
+	seen := make(map[uint64]struct{}, len(posts))
+	ids := make([]uint64, 0, len(posts))
+	for i := range posts {
+		id := posts[i].AuthorID
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
 	}
-	u, err := s.users.GetByID(ctx, authorID)
-	if err != nil {
-		return "", err
-	}
-	cache[authorID] = u.PublicID
-	return u.PublicID, nil
+	return ids
 }
+
 func toPostResponse(p *Post, authorPublicID string) PostResponse {
 	return PostResponse{
 		PublicID:  p.PublicID,

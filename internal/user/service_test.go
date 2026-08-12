@@ -27,6 +27,9 @@ func (m *mockRepo) Create(ctx context.Context, user *User) error {
 func (m *mockRepo) GetByID(context.Context, uint64) (*User, error) {
 	return nil, errors.New("not used")
 }
+func (m *mockRepo) GetByIDs(context.Context, []uint64) ([]User, error) {
+	return nil, errors.New("not used")
+}
 func (m *mockRepo) GetByPublicID(ctx context.Context, publicID string) (*User, error) {
 	return m.getByPublicIDFn(ctx, publicID)
 }

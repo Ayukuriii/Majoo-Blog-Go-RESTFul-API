@@ -18,6 +18,7 @@ type Repository interface {
 	WithTx(tx *gorm.DB) Repository
 	Create(ctx context.Context, user *User) error
 	GetByID(ctx context.Context, id uint64) (*User, error)
+	GetByIDs(ctx context.Context, ids []uint64) ([]User, error)
 	GetByPublicID(ctx context.Context, publicID string) (*User, error)
 	GetByEmail(ctx context.Context, email string) (*User, error)
 }
@@ -57,6 +58,15 @@ func (r *repository) GetByID(ctx context.Context, id uint64) (*User, error) {
 		return nil, err
 	}
 	return &u, nil
+}
+
+func (r *repository) GetByIDs(ctx context.Context, ids []uint64) ([]User, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var users []User
+	err := r.db.WithContext(ctx).Where("id IN ?", ids).Find(&users).Error
+	return users, err
 }
 
 func (r *repository) GetByPublicID(ctx context.Context, publicID string) (*User, error) {

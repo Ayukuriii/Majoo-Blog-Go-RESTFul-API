@@ -1,4 +1,4 @@
-.PHONY: run build test migrate-up migrate-down docker-up docker-down
+.PHONY: run build test migrate-install migrate-up migrate-down docker-up docker-down
 
 APP_NAME := blog-api
 MIGRATE  ?= migrate
@@ -11,6 +11,11 @@ ifneq (,$(wildcard .env))
 endif
 
 DATABASE_URL ?= mysql://$(DB_USER):$(DB_PASSWORD)@tcp($(DB_HOST):$(DB_PORT))/$(DB_NAME)?multiStatements=true
+
+# Install CLI with MySQL driver support (pin matches go.mod):
+#   go install -tags 'mysql' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.3
+migrate-install:
+	go install -tags 'mysql' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.3
 
 run:
 	go run ./cmd/api

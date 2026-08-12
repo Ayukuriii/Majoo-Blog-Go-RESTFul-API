@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"blog-api/internal/config"
+	"blog-api/internal/database"
 )
 
 func main() {
@@ -26,6 +27,13 @@ func main() {
 		Level: logLevel,
 	}))
 	slog.SetDefault(logger)
+
+	db, err := database.Open(cfg.DSN())
+	if err != nil {
+		logger.Error("database open failed", "error", err)
+		os.Exit(1)
+	}
+	_ = db // held until feature DI lands
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {

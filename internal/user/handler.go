@@ -1,6 +1,7 @@
 package user
 
 import (
+	"blog-api/internal/middleware"
 	"blog-api/internal/response"
 	"encoding/json"
 	"errors"
@@ -9,7 +10,7 @@ import (
 	"github.com/go-playground/validator/v10"
 )
 
-func RegisterRoutes(mux *http.ServeMux, s Service) {
+func RegisterRoutes(mux *http.ServeMux, s Service, auth func(http.Handler) http.Handler) {
 	mux.HandleFunc("POST /api/auth/register", func(w http.ResponseWriter, r *http.Request) {
 		register(w, r, s)
 	})
@@ -17,6 +18,10 @@ func RegisterRoutes(mux *http.ServeMux, s Service) {
 	mux.HandleFunc("POST /api/auth/login", func(w http.ResponseWriter, r *http.Request) {
 		login(w, r, s)
 	})
+
+	mux.Handle("GET /api/me", auth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		me(w, r, s)
+	})))
 }
 
 func register(w http.ResponseWriter, r *http.Request, s Service) {
@@ -75,4 +80,25 @@ func login(w http.ResponseWriter, r *http.Request, s Service) {
 		"token":      token,
 		"expires_at": expiresAt,
 	}, "Login successful")
+}
+
+func me(w http.ResponseWriter, r *http.Request, s Service) {
+	publicID, ok := middleware.UserPublicIDFromContext(r.Context())
+	if !ok {
+		response.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	userResp, err := s.GetByPublicID(r.Context(), publicID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			response.Error(w, "user not found", http.StatusNotFound)
+			return
+		}
+
+		response.Error(w, "failed to get user", http.StatusInternalServerError)
+		return
+	}
+
+	response.WithData(w, userResp, "Current user retrieved")
 }

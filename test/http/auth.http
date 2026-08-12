@@ -55,6 +55,7 @@ GET {{baseUrl}}/api/auth/register
 Accept: {{contentJson}}
 
 ### Positive: POST /api/auth/login — valid credentials
+# @name Login
 POST {{baseUrl}}/api/auth/login
 Accept: {{contentJson}}
 Content-Type: {{contentJson}}
@@ -91,3 +92,18 @@ Content-Type: {{contentJson}}
 ### Negative: GET /api/auth/login — method not allowed
 GET {{baseUrl}}/api/auth/login
 Accept: {{contentJson}}
+
+@token = {{Login.response.body.data.token}}
+### Positive: GET /api/me — authenticated
+GET {{baseUrl}}/api/me
+Accept: {{contentJson}}
+Authorization: Bearer {{token}}
+
+### Negative: GET /api/me — missing token (401)
+GET {{baseUrl}}/api/me
+Accept: {{contentJson}}
+
+### Negative: GET /api/me — invalid token (401)
+GET {{baseUrl}}/api/me
+Accept: {{contentJson}}
+Authorization: Bearer not-a-real-token

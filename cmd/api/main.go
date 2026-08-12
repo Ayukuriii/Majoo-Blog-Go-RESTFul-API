@@ -9,6 +9,7 @@ import (
 
 	"blog-api/internal/config"
 	"blog-api/internal/database"
+	"blog-api/internal/middleware"
 	"blog-api/internal/user"
 
 	"github.com/go-playground/validator/v10"
@@ -48,7 +49,7 @@ func main() {
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 
-	user.RegisterRoutes(mux, userService)
+	user.RegisterRoutes(mux, userService, middleware.Auth(cfg.JWTSecret))
 
 	addr := cfg.Addr()
 	srv := &http.Server{

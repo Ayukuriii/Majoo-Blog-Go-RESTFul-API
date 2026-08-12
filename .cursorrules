@@ -260,6 +260,15 @@ GET /api/posts?page=2&per_page=15&search=hello&sort=created_at&order=desc&filter
 - Numbered SQL migrations (`000001_*.up.sql` / `*.down.sql`) for MySQL dialect.
 - Schema changes only via migrations — never “create table” in app startup code.
 - Resource tables include both `id` (PK) and unique `public_id`; FKs reference `id`.
+- Feature resource tables include nullable `deleted_at` (soft delete); audit/log tables may omit it.
+
+### Soft delete
+
+- User-facing feature tables (`users`, `posts`, `comments`, …) use soft delete via nullable `deleted_at` (`DATETIME(3)`).
+- GORM models use `gorm.DeletedAt` so default queries exclude soft-deleted rows.
+- Repositories rely on GORM’s soft-delete scope; use hard delete (`Unscoped`) only for explicit purge/admin paths.
+- Audit/event log tables (e.g. `post_publish_log`) omit `deleted_at` unless product requirements say otherwise.
+- Unique constraints (e.g. `email`) still apply to soft-deleted rows until hard-purged.
 
 ---
 
@@ -270,7 +279,8 @@ GET /api/posts?page=2&per_page=15&search=hello&sort=created_at&order=desc&filter
 ### Schema
 
 - `id` — internal PK (auto-increment / bigint). Used in foreign keys (`post_id`, `user_id`, …).
-- `public_id` — unique opaque public identifier (UUID/ULID). Used in URLs and JSON.
+- `public_id` — unique opaque public identifier (UUID v7, `CHAR(36)`). Used in URLs and JSON.
+- `deleted_at` — soft-delete timestamp on feature resources (see Soft delete).
 
 ### Resolve related records (required flow)
 
@@ -347,7 +357,7 @@ Full rationale: [`docs/architecture.md`](docs/architecture.md) §8.
 ## Adding a New Feature (checklist)
 
 1. Create `internal/<feature>/` with `model.go`, `repository.go`, `service.go`, `handler.go`.
-2. Add migrations under `migrations/` if schema changes (`id` + `public_id`; FKs on `id`).
+2. Add migrations under `migrations/` if schema changes (`id` + `public_id` + `deleted_at` for feature resources; FKs on `id`).
 3. Define repository + service interfaces; implement with constructors.
 4. Register routes and wire DI in `cmd/api/main.go` (`net/http`).
 5. Return all payloads through `internal/response` with `public_id` only.
@@ -429,7 +439,8 @@ Content-Type: {{contentJson}}
 | Validation     | `github.com/go-playground/validator/v10`                     |
 | Passwords      | `golang.org/x/crypto/bcrypt`                                 |
 | Auth           | `github.com/golang-jwt/jwt/v5`                               |
-| Identifiers    | `public_id` external; `id` internal PK only                  |
+| Identifiers    | `public_id` (UUID v7, CHAR(36)) external; `id` internal PK only |
+| Deletion       | Soft delete via `deleted_at` on feature resources (GORM `DeletedAt`) |
 | Config         | Env vars via `.env` + small config loader                    |
 | Migrations     | SQL files in `migrations/` (golang-migrate, MySQL)           |
 | Response       | `WithData` / `WithPaginatedData` / `WithMessage` / `Error`   |

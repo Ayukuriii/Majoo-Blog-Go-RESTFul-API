@@ -14,6 +14,7 @@ This document records the stack and design choices for the Majoo Blog RESTful AP
 | Auth tokens | JWT | `github.com/golang-jwt/jwt/v5` |
 | Request validation | Struct tags | `github.com/go-playground/validator/v10` |
 | Public identifiers | `public_id` (UUID v7) | Opaque time-ordered UUID in API; numeric `id` stays internal PK |
+| Deletion | Soft delete (`deleted_at`) | GORM `DeletedAt` on feature resources; audit/log tables exempt |
 
 ---
 
@@ -57,6 +58,7 @@ This document records the stack and design choices for the Majoo Blog RESTful AP
 - Whitelist sort/filter columns in the **service** before applying `Order` / `Where` — never pass raw client field names into GORM.
 - Keep schema authority in `migrations/`; treat AutoMigrate as optional local convenience only, not the production migration path.
 - Lookup by `public_id` with GORM (`Where("public_id = ?", ...)`); assign FKs using internal `id` after the resolve → validate flow (§8).
+- Feature models use `gorm.DeletedAt` so soft-deleted rows are excluded by default (§9).
 
 **Do not:**
 
@@ -179,8 +181,9 @@ Typical columns on a resource table:
 | Column | Role |
 |--------|------|
 | `id` | Internal PK (`BIGINT` / auto-increment). Used in FKs (`post_id`, `user_id`, …). |
-| `public_id` | Unique, indexed public identifier — **UUID v7** (CHAR(36) or BINARY(16)). Appears in URLs and JSON as `public_id` (or resource-specific name like `post_public_id` only if needed). |
-| Domain columns | `title`, `body`, `is_active`, timestamps, etc. |
+| `public_id` | Unique, indexed public identifier — **UUID v7** (`CHAR(36)`). Appears in URLs and JSON as `public_id` (or resource-specific name like `post_public_id` only if needed). |
+| `deleted_at` | Soft-delete timestamp on feature resources (see §9). |
+| Domain columns | `title`, `body`, `status`, timestamps, etc. |
 
 Foreign keys between tables always reference **`id`**, never `public_id`.
 
@@ -241,6 +244,26 @@ Same rule when listing or loading children:
 - Accept numeric database ids from the client for lookups or FK assignment.
 - Treat client-supplied `public_id` as a foreign key — always resolve → validate → use internal `id`.
 - Use UUID v4, ULID, or other formats for new `public_id` values — stick to UUID v7.
+
+---
+
+## 9. Soft delete (`deleted_at`)
+
+**Decision:** User-facing feature resources soft-delete via a nullable `deleted_at` column. GORM models use `gorm.DeletedAt` so default queries exclude deleted rows.
+
+**Reasons:**
+
+- Recoverability and audit-friendly history without immediate hard deletes.
+- Matches GORM’s built-in soft-delete support without custom delete flags.
+- Keeps FK cascades for rare hard-purge paths while normal API deletes only set `deleted_at`.
+
+**Conventions:**
+
+- Feature tables (`users`, `posts`, `comments`, …) include `deleted_at DATETIME(3) NULL` and an index on `deleted_at`.
+- Repositories use GORM’s default scope; hard delete (`Unscoped`) only for explicit purge/admin flows.
+- Audit/event log tables (e.g. `post_publish_log`) omit soft delete — they record facts and stay until hard-purged with the parent.
+- Unique constraints (e.g. `users.email`) still apply to soft-deleted rows until hard-purged.
+- Resolve-flow validation (§8) must treat soft-deleted parents as not found / unavailable.
 
 ---
 

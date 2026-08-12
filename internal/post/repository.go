@@ -38,15 +38,18 @@ type ListQuery struct {
 	Sort    string
 	Order   string // asc | desc
 	Filters map[string]string
+	Path    string // e.g. "/api/posts"
 }
 
 // Repository persists and loads posts.
 type Repository interface {
+	WithTx(tx *gorm.DB) Repository
 	Create(ctx context.Context, post *Post) error
 	GetByPublicID(ctx context.Context, publicID string) (*Post, error)
 	List(ctx context.Context, q ListQuery) (posts []Post, total int64, err error)
 	Update(ctx context.Context, post *Post) error
 	Delete(ctx context.Context, post *Post) error
+	CreatePublishLog(ctx context.Context, log *PublishLog) error
 }
 
 type repository struct {
@@ -56,6 +59,10 @@ type repository struct {
 // NewRepository reurns a GORM-backed post Repository.
 func NewRepository(db *gorm.DB) Repository {
 	return &repository{db: db}
+}
+
+func (r *repository) WithTx(tx *gorm.DB) Repository {
+	return &repository{db: tx}
 }
 
 func (r *repository) Create(ctx context.Context, post *Post) error {
@@ -102,6 +109,10 @@ func (r *repository) Update(ctx context.Context, post *Post) error {
 func (r *repository) Delete(ctx context.Context, post *Post) error {
 	// Soft-delete: GORM sets deleted_at because Post has gorm.DeletedAt.
 	return r.db.WithContext(ctx).Delete(post).Error
+}
+
+func (r *repository) CreatePublishLog(ctx context.Context, log *PublishLog) error {
+	return r.db.WithContext(ctx).Create(log).Error
 }
 
 func (r *repository) applyListFilters(db *gorm.DB, q ListQuery) *gorm.DB {

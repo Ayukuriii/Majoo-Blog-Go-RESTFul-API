@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 type mockRepo struct {
@@ -19,6 +20,7 @@ type mockRepo struct {
 	getByPublicIDFn func(ctx context.Context, publicID string) (*User, error)
 }
 
+func (m *mockRepo) WithTx(*gorm.DB) Repository { return m }
 func (m *mockRepo) Create(ctx context.Context, user *User) error {
 	return m.createFn(ctx, user)
 }

@@ -15,6 +15,7 @@ var (
 
 // Repository persists and loads users.
 type Repository interface {
+	WithTx(tx *gorm.DB) Repository
 	Create(ctx context.Context, user *User) error
 	GetByID(ctx context.Context, id uint64) (*User, error)
 	GetByPublicID(ctx context.Context, publicID string) (*User, error)
@@ -28,6 +29,10 @@ type repository struct {
 // NewRepository returns a GORM-backed user Repository.
 func NewRepository(db *gorm.DB) Repository {
 	return &repository{db: db}
+}
+
+func (r *repository) WithTx(tx *gorm.DB) Repository {
+	return &repository{db: tx}
 }
 
 func (r *repository) Create(ctx context.Context, user *User) error {

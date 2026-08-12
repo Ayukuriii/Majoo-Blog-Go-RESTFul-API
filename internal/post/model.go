@@ -6,6 +6,11 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	StatusDraft     = "draft"
+	StatusPublished = "published"
+)
+
 type Post struct {
 	ID        uint64         `gorm:"column:id;primaryKey"`
 	PublicID  string         `gorm:"column:public_id;size:36;uniqueIndex;not null"`
@@ -20,6 +25,16 @@ type Post struct {
 
 func (Post) TableName() string {
 	return "posts"
+}
+
+// PublishLog is an audit row. No deleted_at — it records a fact.
+type PublishLog struct {
+	ID          uint64    `gorm:"column:id;primaryKey"`
+	PostID      uint64    `gorm:"column:post_id;not null"`
+	PublishedAt time.Time `gorm:"column:published_at;not null"`
+}
+func (PublishLog) TableName() string {
+	return "post_publish_log"
 }
 
 // CreatePostRequest is the body for creating a post.

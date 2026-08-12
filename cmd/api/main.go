@@ -10,6 +10,7 @@ import (
 	"blog-api/internal/config"
 	"blog-api/internal/database"
 	"blog-api/internal/middleware"
+	"blog-api/internal/post"
 	"blog-api/internal/user"
 
 	"github.com/go-playground/validator/v10"
@@ -39,8 +40,12 @@ func main() {
 		os.Exit(1)
 	}
 	validate := validator.New()
+
 	userRepo := user.NewRepository(db)
 	userService := user.NewService(userRepo, validate, cfg.JWTSecret, cfg.JWTExpiryMinutes, bcrypt.DefaultCost)
+
+	postRepo := post.NewRepository(db)
+	postService := post.NewService(postRepo, userRepo, db, validate)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
@@ -49,7 +54,10 @@ func main() {
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 
-	user.RegisterRoutes(mux, userService, middleware.Auth(cfg.JWTSecret))
+	auth := middleware.Auth(cfg.JWTSecret)
+
+	user.RegisterRoutes(mux, userService, auth)
+	post.RegisterRoutes(mux, postService, auth)
 
 	addr := cfg.Addr()
 	srv := &http.Server{

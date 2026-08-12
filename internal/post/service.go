@@ -25,6 +25,7 @@ type Service interface {
 	Update(ctx context.Context, authorPublicID, postPublicID string, req UpdatePostRequest) (PostResponse, error)
 	Delete(ctx context.Context, authorPublicID, postPublicID string) error
 	PublishWithSnapshot(ctx context.Context, authorPublicID, postPublicID string) (PostResponse, error)
+	Get(ctx context.Context, publicID string) (PostResponse, error)
 }
 
 type service struct {
@@ -153,6 +154,18 @@ func (s *service) PublishWithSnapshot(ctx context.Context, authorPublicID, postP
 	return out, nil
 }
 
+func (s *service) Get(ctx context.Context, publicID string) (PostResponse, error) {
+	p, err := s.repo.GetByPublicID(ctx, publicID)
+	if err != nil {
+		return PostResponse{}, err
+	}
+	author, err := s.users.GetByID(ctx, p.AuthorID)
+	if err != nil {
+		return PostResponse{}, err
+	}
+	return toPostResponse(p, author.PublicID), nil
+}
+
 // ownedPost: resolve post + author by public_id, then compare internal ids.
 func (s *service) ownedPost(ctx context.Context, repo Repository, users user.Repository, authorPublicID, postPublicID string) (*Post, *user.User, error) {
 	author, err := users.GetByPublicID(ctx, authorPublicID)
@@ -194,6 +207,7 @@ func toPostResponse(p *Post, authorPublicID string) PostResponse {
 		UpdatedAt: p.UpdatedAt,
 	}
 }
+
 func buildPage(q ListQuery, page, perPage, n int, total int64) (response.Meta, response.Links) {
 	path := q.Path
 	if path == "" {
@@ -234,12 +248,14 @@ func buildPage(q ListQuery, page, perPage, n int, total int64) (response.Meta, r
 	}
 	return meta, links
 }
+
 func lastPage(total int64, perPage int) int {
 	if total == 0 || perPage < 1 {
 		return 1
 	}
 	return int((total + int64(perPage) - 1) / int64(perPage))
 }
+
 func echoFilters(in map[string]string) map[string]any {
 	if len(in) == 0 {
 		return nil

@@ -1,0 +1,273 @@
+@baseUrl = http://localhost:8080
+@contentJson = application/json
+@email = john.doe@example.com
+@password = password123
+@otherEmail = jane.doe@example.com
+@otherPassword = password123
+@missingPublicId = 01900000-0000-7000-8000-000000000000
+
+# Register {{email}} via auth.http first if this login returns 401.
+
+### Positive: POST /api/auth/login — author token
+# @name Login
+POST {{baseUrl}}/api/auth/login
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+
+{
+  "email": "{{email}}",
+  "password": "{{password}}"
+}
+
+@token = {{Login.response.body.data.token}}
+
+### Positive: POST /api/posts — create draft
+# @name CreatePost
+POST {{baseUrl}}/api/posts
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+Authorization: Bearer {{token}}
+
+{
+  "title": "Hello Majoo",
+  "body": "First post body"
+}
+
+@postPublicId = {{CreatePost.response.body.data.public_id}}
+
+### Negative: POST /api/posts — missing token (401)
+POST {{baseUrl}}/api/posts
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+
+{
+  "title": "No token",
+  "body": "Should not be created"
+}
+
+### Negative: POST /api/posts — invalid token (401)
+POST {{baseUrl}}/api/posts
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+Authorization: Bearer not-a-real-token
+
+{
+  "title": "Bad token",
+  "body": "Should not be created"
+}
+
+### Negative: POST /api/posts — validation error (empty body)
+POST {{baseUrl}}/api/posts
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+Authorization: Bearer {{token}}
+
+{}
+
+### Negative: POST /api/posts — validation error (title too long)
+POST {{baseUrl}}/api/posts
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+Authorization: Bearer {{token}}
+
+{
+  "title": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "body": "ok"
+}
+
+### Negative: POST /api/posts — invalid JSON body
+POST {{baseUrl}}/api/posts
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+Authorization: Bearer {{token}}
+
+{not-json
+
+### Negative: PUT /api/posts — method not allowed
+PUT {{baseUrl}}/api/posts
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+Authorization: Bearer {{token}}
+
+{
+  "title": "Wrong method",
+  "body": "Should not be created"
+}
+
+### Positive: GET /api/posts — list
+GET {{baseUrl}}/api/posts
+Accept: {{contentJson}}
+
+### Positive: GET /api/posts — pagination, search, sort, filter[status]
+GET {{baseUrl}}/api/posts?page=1&per_page=15&search=Hello&sort=created_at&order=desc&filter[status]=draft
+Accept: {{contentJson}}
+
+### Positive: GET /api/posts/{publicId}
+GET {{baseUrl}}/api/posts/{{postPublicId}}
+Accept: {{contentJson}}
+
+### Negative: GET /api/posts/{publicId} — not found
+GET {{baseUrl}}/api/posts/{{missingPublicId}}
+Accept: {{contentJson}}
+
+### Negative: PUT /api/posts/{publicId} — method not allowed
+PUT {{baseUrl}}/api/posts/{{postPublicId}}
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+Authorization: Bearer {{token}}
+
+{
+  "title": "Wrong method"
+}
+
+### Positive: PATCH /api/posts/{publicId} — update title
+PATCH {{baseUrl}}/api/posts/{{postPublicId}}
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+Authorization: Bearer {{token}}
+
+{
+  "title": "Hello Majoo (edited)"
+}
+
+### Negative: PATCH /api/posts/{publicId} — missing token (401)
+PATCH {{baseUrl}}/api/posts/{{postPublicId}}
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+
+{
+  "title": "No token"
+}
+
+### Negative: PATCH /api/posts/{publicId} — invalid token (401)
+PATCH {{baseUrl}}/api/posts/{{postPublicId}}
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+Authorization: Bearer not-a-real-token
+
+{
+  "title": "Bad token"
+}
+
+### Negative: PATCH /api/posts/{publicId} — not found
+PATCH {{baseUrl}}/api/posts/{{missingPublicId}}
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+Authorization: Bearer {{token}}
+
+{
+  "title": "Missing post"
+}
+
+### Negative: PATCH /api/posts/{publicId} — validation error (title too long)
+PATCH {{baseUrl}}/api/posts/{{postPublicId}}
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+Authorization: Bearer {{token}}
+
+{
+  "title": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+}
+
+### Negative: PATCH /api/posts/{publicId} — invalid JSON body
+PATCH {{baseUrl}}/api/posts/{{postPublicId}}
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+Authorization: Bearer {{token}}
+
+{not-json}
+
+### Positive: POST /api/posts/{publicId}/publish
+POST {{baseUrl}}/api/posts/{{postPublicId}}/publish
+Accept: {{contentJson}}
+Authorization: Bearer {{token}}
+
+### Positive: GET /api/posts — filter[status]=published
+GET {{baseUrl}}/api/posts?filter[status]=published&sort=created_at&order=desc
+Accept: {{contentJson}}
+
+### Negative: POST /api/posts/{publicId}/publish — missing token (401)
+POST {{baseUrl}}/api/posts/{{postPublicId}}/publish
+Accept: {{contentJson}}
+
+### Negative: POST /api/posts/{publicId}/publish — invalid token (401)
+POST {{baseUrl}}/api/posts/{{postPublicId}}/publish
+Accept: {{contentJson}}
+Authorization: Bearer not-a-real-token
+
+### Negative: POST /api/posts/{publicId}/publish — not found
+POST {{baseUrl}}/api/posts/{{missingPublicId}}/publish
+Accept: {{contentJson}}
+Authorization: Bearer {{token}}
+
+### Negative: GET /api/posts/{publicId}/publish — method not allowed
+GET {{baseUrl}}/api/posts/{{postPublicId}}/publish
+Accept: {{contentJson}}
+
+### Positive: POST /api/auth/register — second author (for 403)
+# Skip if jane.doe@example.com is already registered.
+POST {{baseUrl}}/api/auth/register
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+
+{
+  "email": "{{otherEmail}}",
+  "password": "{{otherPassword}}",
+  "display_name": "Jane"
+}
+
+### Positive: POST /api/auth/login — second author token
+# @name OtherLogin
+POST {{baseUrl}}/api/auth/login
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+
+{
+  "email": "{{otherEmail}}",
+  "password": "{{otherPassword}}"
+}
+
+@otherToken = {{OtherLogin.response.body.data.token}}
+
+### Negative: PATCH /api/posts/{publicId} — forbidden (403)
+PATCH {{baseUrl}}/api/posts/{{postPublicId}}
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+Authorization: Bearer {{otherToken}}
+
+{
+  "title": "Not my post"
+}
+
+### Negative: POST /api/posts/{publicId}/publish — forbidden (403)
+POST {{baseUrl}}/api/posts/{{postPublicId}}/publish
+Accept: {{contentJson}}
+Authorization: Bearer {{otherToken}}
+
+### Negative: DELETE /api/posts/{publicId} — forbidden (403)
+DELETE {{baseUrl}}/api/posts/{{postPublicId}}
+Accept: {{contentJson}}
+Authorization: Bearer {{otherToken}}
+
+### Negative: DELETE /api/posts/{publicId} — missing token (401)
+DELETE {{baseUrl}}/api/posts/{{postPublicId}}
+Accept: {{contentJson}}
+
+### Negative: DELETE /api/posts/{publicId} — invalid token (401)
+DELETE {{baseUrl}}/api/posts/{{postPublicId}}
+Accept: {{contentJson}}
+Authorization: Bearer not-a-real-token
+
+### Positive: DELETE /api/posts/{publicId}
+DELETE {{baseUrl}}/api/posts/{{postPublicId}}
+Accept: {{contentJson}}
+Authorization: Bearer {{token}}
+
+### Negative: GET /api/posts/{publicId} — not found after delete
+GET {{baseUrl}}/api/posts/{{postPublicId}}
+Accept: {{contentJson}}
+
+### Negative: DELETE /api/posts/{publicId} — not found
+DELETE {{baseUrl}}/api/posts/{{missingPublicId}}
+Accept: {{contentJson}}
+Authorization: Bearer {{token}}

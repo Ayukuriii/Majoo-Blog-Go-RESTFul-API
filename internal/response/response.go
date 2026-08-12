@@ -30,15 +30,21 @@ type Links struct {
 }
 
 type envelope struct {
-	Message *string `json:"message,omitempty"`
-	Data    any     `json:"data,omitempty"`
-	Meta    *Meta   `json:"meta,omitempty"`
-	Links   *Links  `json:"links,omitempty"`
+	Message *string           `json:"message,omitempty"`
+	Errors  map[string]string `json:"errors,omitempty"`
+	Data    any               `json:"data,omitempty"`
+	Meta    *Meta             `json:"meta,omitempty"`
+	Links   *Links            `json:"links,omitempty"`
 }
 
-// WithData writes a 200 response with optional message and data payload.
+// WithData writes a success response with data (default 200).
 func WithData(w http.ResponseWriter, data any, message ...string) {
-	writeJSON(w, http.StatusOK, envelope{
+	WithStatusData(w, http.StatusOK, data, message...)
+}
+
+// WithStatusData is like WithData but with an explicit HTTP status (e.g. 201).
+func WithStatusData(w http.ResponseWriter, status int, data any, message ...string) {
+	writeJSON(w, status, envelope{
 		Message: optionalMessage(message),
 		Data:    data,
 	})

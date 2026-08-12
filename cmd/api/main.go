@@ -9,6 +9,10 @@ import (
 
 	"blog-api/internal/config"
 	"blog-api/internal/database"
+	"blog-api/internal/user"
+
+	"github.com/go-playground/validator/v10"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func main() {
@@ -33,7 +37,9 @@ func main() {
 		logger.Error("database open failed", "error", err)
 		os.Exit(1)
 	}
-	_ = db // held until feature DI lands
+	validate := validator.New()
+	userRepo := user.NewRepository(db)
+	userService := user.NewService(userRepo, validate, cfg.JWTSecret, cfg.JWTExpiryMinutes, bcrypt.DefaultCost)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
@@ -41,6 +47,8 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
+
+	user.RegisterRoutes(mux, userService)
 
 	addr := cfg.Addr()
 	srv := &http.Server{

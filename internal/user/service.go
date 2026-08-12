@@ -19,6 +19,7 @@ type Service interface {
 	Register(ctx context.Context, req RegisterRequest) (UserResponse, error)
 	Login(ctx context.Context, req LoginRequest) (token string, expiresAt time.Time, err error)
 	GetByPublicID(ctx context.Context, publicID string) (UserResponse, error)
+	GetByEmail(ctx context.Context, email string) (UserResponse, error)
 }
 
 type service struct {
@@ -112,6 +113,14 @@ func (s *service) GetByPublicID(ctx context.Context, publicID string) (UserRespo
 		return UserResponse{}, err
 	}
 
+	return toUserResponse(u), nil
+}
+
+func (s *service) GetByEmail(ctx context.Context, email string) (UserResponse, error) {
+	u, err := s.repo.GetByEmail(ctx, email)
+	if err != nil {
+		return UserResponse{}, err
+	}
 	return toUserResponse(u), nil
 }
 

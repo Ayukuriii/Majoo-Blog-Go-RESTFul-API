@@ -1,0 +1,93 @@
+@baseUrl = http://localhost:8080
+@contentJson = application/json
+@email = john.doe@example.com
+@password = password123
+
+### Positive: POST /api/auth/register — create user
+POST {{baseUrl}}/api/auth/register
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+
+{
+  "email": "{{email}}",
+  "password": "{{password}}",
+  "display_name": "John"
+}
+
+### Negative: POST /api/auth/register — validation error (empty body)
+POST {{baseUrl}}/api/auth/register
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+
+{}
+
+### Negative: POST /api/auth/register — validation error (short password)
+POST {{baseUrl}}/api/auth/register
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+
+{
+  "email": "shortpass@example.com",
+  "password": "short"
+}
+
+### Negative: POST /api/auth/register — invalid JSON body
+POST {{baseUrl}}/api/auth/register
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+
+{not-json
+
+### Negative: POST /api/auth/register — duplicate email (409)
+# Run the positive register request first, then this one with the same email.
+POST {{baseUrl}}/api/auth/register
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+
+{
+  "email": "{{email}}",
+  "password": "{{password}}",
+  "display_name": "John Again"
+}
+
+### Negative: GET /api/auth/register — method not allowed
+GET {{baseUrl}}/api/auth/register
+Accept: {{contentJson}}
+
+### Positive: POST /api/auth/login — valid credentials
+POST {{baseUrl}}/api/auth/login
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+
+{
+  "email": "{{email}}",
+  "password": "{{password}}"
+}
+
+### Negative: POST /api/auth/login — invalid credentials (401)
+POST {{baseUrl}}/api/auth/login
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+
+{
+  "email": "{{email}}",
+  "password": "wrong-password"
+}
+
+### Negative: POST /api/auth/login — validation error (empty body)
+POST {{baseUrl}}/api/auth/login
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+
+{}
+
+### Negative: POST /api/auth/login — invalid JSON body
+POST {{baseUrl}}/api/auth/login
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+
+{not-json
+
+### Negative: GET /api/auth/login — method not allowed
+GET {{baseUrl}}/api/auth/login
+Accept: {{contentJson}}

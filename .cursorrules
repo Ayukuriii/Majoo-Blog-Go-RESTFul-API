@@ -3,6 +3,8 @@
 Use this as the default blueprint when scaffolding or extending a production-ready Go RESTful API.
 Prefer this layout and conventions over flat `controller/` / `service/` / `repository/` packages.
 
+Architecture rationale (MySQL, GORM, `net/http`, `encoding/json`, bcrypt, JWT, validator, `public_id`) lives in [`docs/architecture.md`](docs/architecture.md). Follow that document when choices conflict with older defaults.
+
 ## Project Layout (required)
 
 ```
@@ -14,18 +16,20 @@ my-api-project/
 │   ├── config/
 │   │   └── config.go            # Env vars & config loading
 │   ├── database/
-│   │   └── postgres.go          # DB pool init (*sql.DB)
-│   ├── <feature>/               # One package per domain (e.g. product, category)
+│   │   └── mysql.go             # GORM DB init (*gorm.DB)
+│   ├── <feature>/               # One package per domain (e.g. post, comment)
 │   │   ├── handler.go           # HTTP transport (request/response, routing hooks)
 │   │   ├── service.go           # Business logic, validation, transactions
-│   │   ├── repository.go        # SQL / data access
+│   │   ├── repository.go        # GORM data access
 │   │   └── model.go             # Domain entities + request/response DTOs
 │   ├── middleware/
-│   │   └── auth.go              # Auth / JWT / API-key middleware
+│   │   └── auth.go              # Auth / JWT middleware
 │   └── response/
 │       └── response.go          # Unified JSON envelope & error helpers
 ├── migrations/
 │   └── 000001_init.up.sql
+├── docs/
+│   └── architecture.md          # Stack & design decisions
 ├── .env
 ├── go.mod
 ├── go.sum
@@ -46,23 +50,23 @@ my-api-project/
 
 ```
 HTTP Request
-  → middleware (auth, logging, recovery)
+  → middleware (auth/JWT, logging, recovery)
   → handler (decode/bind, call service, write response)
-  → service (validate, begin tx, business rules, call repository)
-  → repository (SQL via ctx + *sql.Tx / *sql.DB)
+  → service (validate, resolve public_id → internal id, begin GORM tx, business rules, call repository)
+  → repository (GORM via ctx + *gorm.DB / tx session)
   → domain model
-  → service maps to response DTO
-  → handler wraps in unified JSON envelope
+  → service maps to response DTO (public_id only — never raw id)
+  → handler wraps in unified JSON envelope (encoding/json)
 ```
 
 Dependencies point **inward**:
 
 - `handler` → `service` (interface)
 - `service` → `repository` (interface)
-- `repository` → DB only
+- `repository` → `*gorm.DB` only
 - `cmd/api` wires concrete types (constructor DI)
 
-Never import `handler` from `service` or `repository`. Never call SQL from `handler` or put HTTP types in `repository`.
+Never import `handler` from `service` or `repository`. Never call GORM from `handler` or put HTTP types in `repository`.
 
 ---
 
@@ -71,41 +75,47 @@ Never import `handler` from `service` or `repository`. Never call SQL from `hand
 ### `cmd/api/main.go`
 
 - Load config, open DB, build validator, construct repository → service → handler.
-- Register routes and middleware.
+- Register routes on `net/http` `ServeMux` and wrap with middleware.
 - Start `http.Server` with sensible timeouts.
 - Panic only on fatal startup failures.
 
 ### `internal/<feature>/handler.go` (transport)
 
-- Decode JSON body / path / query params.
+- Decode JSON body (`encoding/json`) / path / query params.
 - Call service with `request.Context()`.
 - Map results to the unified response envelope.
 - No business rules, no SQL, no transactions.
+- Path params use `public_id` (e.g. `{publicId}`), never numeric database ids.
 
 ### `internal/<feature>/service.go` (business)
 
 - Validate input (`go-playground/validator` struct tags).
-- Own transaction boundaries (`Begin` + commit/rollback).
+- Own transaction boundaries (`db.WithContext(ctx).Transaction(...)` or equivalent); pass the tx session into repositories.
+- Resolve related records by `public_id`, validate them, then use internal `id` for FKs (see Public identifiers).
+- Hash/compare passwords with bcrypt when the feature handles credentials.
 - Orchestrate repository calls and domain rules.
-- Map domain entities ↔ DTOs.
+- Map domain entities ↔ DTOs (response DTOs expose `public_id` only).
 - Accept repository via **interface**, not concrete struct.
 
 ### `internal/<feature>/repository.go` (data)
 
-- Execute parameterized SQL with `context.Context`.
-- Prefer `*sql.Tx` when called inside a service transaction.
+- Use GORM (`*gorm.DB`) with `WithContext(ctx)` for all queries.
+- Prefer GORM CRUD / association APIs; use `Raw`/`Exec` only when needed, always with bound args.
+- Accept a DB/tx session so service-owned transactions work.
 - Return domain models / errors — never HTTP status codes or JSON envelopes.
+- Lookups by public identifier: `Where("public_id = ?", ...)`; FKs always store/use numeric `id`.
 
 ### `internal/<feature>/model.go`
 
-- Domain entity structs (table-shaped).
-- Request DTOs with `json` + `validate` tags.
-- Response DTOs with `json` tags.
+- Domain entity structs for GORM (table-shaped tags), including both `ID` and `PublicID`.
+- Request DTOs with `json` + `validate` tags; parent refs use `*_public_id` fields, not numeric ids.
+- Response DTOs with `json` tags — include `public_id`, **omit** raw `id` (do not return GORM models that leak `id`/hashes).
 - Keep feature models inside the feature package (no global `model/web` dump).
 
 ### `internal/response`
 
-All handlers MUST return JSON via these helpers (Go equivalent of the PHP helpers below). Do not invent ad-hoc response shapes.
+All handlers MUST return JSON via these helpers. Do not invent ad-hoc response shapes.
+Encode with `encoding/json` only.
 
 **JSON encode flags (always):** unescape Unicode, unescape `/`, preserve zero fractions (match PHP `JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION`).
 
@@ -154,21 +164,21 @@ type Links struct {
 
 ```json
 {
-  "message": "Product created",
-  "data": { "id": 1, "name": "Widget" }
+  "message": "Post created",
+  "data": { "public_id": "01HXYZ...", "title": "Hello" }
 }
 ```
 
-`message` is optional — omit the key when not provided.
+`message` is optional — omit the key when not provided. Never include numeric database `id` in `data`.
 
 #### Message-only / error
 
 ```json
-{ "message": "Product deleted" }
+{ "message": "Post deleted" }
 ```
 
 ```json
-{ "message": "Product not found" }
+{ "message": "Post not found" }
 ```
 
 #### Paginated list (`GET /api/<resources>` or `/list`)
@@ -182,44 +192,43 @@ type Links struct {
 | `search` | `?search=widget` | Free-text search across allowed columns |
 | `sort` | `?sort=created_at` | Sort column (whitelist in service) |
 | `order` | `?order=desc` | `asc` \| `desc` (default `asc`) |
-| `filter[<field>]` | `?filter[status]=active&filter[category_id]=3` | Exact/enum filters |
+| `filter[<field>]` | `?filter[status]=active&filter[category_public_id]=01H...` | Exact/enum filters (filter values that identify rows use `public_id`, not raw ids) |
 
 Example request:
 
 ```http
-GET /api/products?page=2&per_page=15&search=widget&sort=created_at&order=desc&filter[status]=active&filter[category_id]=3
+GET /api/posts?page=2&per_page=15&search=hello&sort=created_at&order=desc&filter[status]=active
 ```
 
 **Response shape:**
 
 ```json
 {
-  "message": "Products retrieved",
+  "message": "Posts retrieved",
   "data": [
-    { "id": 16, "name": "Widget Pro", "status": "active" },
-    { "id": 17, "name": "Widget Air", "status": "active" }
+    { "public_id": "01HAAA...", "title": "Widget Pro", "status": "active" },
+    { "public_id": "01HBBB...", "title": "Widget Air", "status": "active" }
   ],
   "meta": {
     "current_page": 2,
     "from": 16,
     "last_page": 10,
-    "path": "/api/products",
+    "path": "/api/posts",
     "per_page": 15,
     "to": 30,
     "total": 142,
-    "search": "widget",
+    "search": "hello",
     "sort": "created_at",
     "order": "desc",
     "filters": {
-      "status": "active",
-      "category_id": "3"
+      "status": "active"
     }
   },
   "links": {
-    "first": "/api/products?page=1&per_page=15&search=widget&sort=created_at&order=desc&filter[status]=active&filter[category_id]=3",
-    "last": "/api/products?page=10&per_page=15&search=widget&sort=created_at&order=desc&filter[status]=active&filter[category_id]=3",
-    "prev": "/api/products?page=1&per_page=15&search=widget&sort=created_at&order=desc&filter[status]=active&filter[category_id]=3",
-    "next": "/api/products?page=3&per_page=15&search=widget&sort=created_at&order=desc&filter[status]=active&filter[category_id]=3"
+    "first": "/api/posts?page=1&per_page=15&search=hello&sort=created_at&order=desc&filter[status]=active",
+    "last": "/api/posts?page=10&per_page=15&search=hello&sort=created_at&order=desc&filter[status]=active",
+    "prev": "/api/posts?page=1&per_page=15&search=hello&sort=created_at&order=desc&filter[status]=active",
+    "next": "/api/posts?page=3&per_page=15&search=hello&sort=created_at&order=desc&filter[status]=active"
   }
 }
 ```
@@ -236,18 +245,51 @@ GET /api/products?page=2&per_page=15&search=widget&sort=created_at&order=desc&fi
 ### `internal/config` & `internal/database`
 
 - Read from environment (`.env` for local; never hardcode DSN in source).
-- Configure pool: max open/idle conns, conn max lifetime / idle time.
-- Default DB driver for new projects: **PostgreSQL** (`pgx` or `lib/pq` + `database/sql`).
+- Open `*gorm.DB` with `gorm.io/driver/mysql`; configure pool via the underlying `sql.DB`.
+- Default stack: **MySQL** + **GORM** (`gorm.io/gorm`, `gorm.io/driver/mysql`).
+- Schema changes via `migrations/` only — do not use GORM AutoMigrate as the production migration path.
 
 ### `internal/middleware`
 
-- Auth (JWT / API key), request ID, recovery, CORS as needed.
-- Middleware wraps the router/handler chain in `main`; features do not reimplement auth.
+- Auth via JWT (`github.com/golang-jwt/jwt/v5`), request ID, recovery, CORS as needed.
+- Middleware wraps the mux/handler chain in `main`; features do not reimplement auth.
+- Prefer user/`sub` claims that use `public_id`, not numeric database ids.
 
 ### `migrations/`
 
-- Numbered SQL migrations (`000001_*.up.sql` / `*.down.sql`).
+- Numbered SQL migrations (`000001_*.up.sql` / `*.down.sql`) for MySQL dialect.
 - Schema changes only via migrations — never “create table” in app startup code.
+- Resource tables include both `id` (PK) and unique `public_id`; FKs reference `id`.
+
+---
+
+## Public identifiers (`public_id`)
+
+**Rule:** Never expose raw database `id` in API paths, request bodies, response JSON, or client-facing JWT claims. `id` remains the primary key for joins and FKs only.
+
+### Schema
+
+- `id` — internal PK (auto-increment / bigint). Used in foreign keys (`post_id`, `user_id`, …).
+- `public_id` — unique opaque public identifier (UUID/ULID). Used in URLs and JSON.
+
+### Resolve related records (required flow)
+
+When a child (or any write/read) needs a parent/related row referenced by the client:
+
+1. **Lookup** the related row by `public_id`.
+2. **Validate** the record (exists; `is_active` / status; authz; soft-delete / visibility as applicable).
+3. **If validation passed**, use the related row’s internal `id` for the FK / join  
+   (e.g. comment stored with `post_id = 1` after resolving post `public_id`).
+
+Do not accept or trust numeric database ids from the client. Do not use `public_id` as a foreign-key column.
+
+### API
+
+- Paths: `/api/posts/{publicId}`, not `/api/posts/{id}`.
+- Request bodies reference parents via `post_public_id` (or equivalent), not `post_id`.
+- Response DTOs: `public_id` only.
+
+Full rationale: [`docs/architecture.md`](docs/architecture.md) §8.
 
 ---
 
@@ -261,9 +303,9 @@ GET /api/products?page=2&per_page=15&search=widget&sort=created_at&order=desc&fi
 
 ### Context & errors
 
-- Pass `context.Context` as the first argument on service and repository methods.
-- Use parameterized queries only (`$1`, `$2` for Postgres — never string-concat user input).
-- Prefer returning `error` from repository/service for expected failures (e.g. not found).
+- Pass `context.Context` as the first argument on service and repository methods; use `db.WithContext(ctx)`.
+- Never string-concatenate user input into GORM queries — use bound args / struct conditions.
+- Prefer returning `error` from repository/service for expected failures (e.g. `gorm.ErrRecordNotFound` → not found).
 - Use panic + recovery middleware only for unexpected failures, consistent with a single error strategy across the project.
 
 ### Validation
@@ -271,20 +313,27 @@ GET /api/products?page=2&per_page=15&search=widget&sort=created_at&order=desc&fi
 - Validate request structs in the **service** layer with `validator.Validate`.
 - Tags live on request DTOs, e.g. `validate:"required,max=200,min=1"`.
 
+### Passwords & auth
+
+- Hash and verify passwords with `golang.org/x/crypto/bcrypt` in the service layer.
+- Issue and validate tokens with `github.com/golang-jwt/jwt/v5`; wire checks in `internal/middleware`.
+
 ### HTTP API style
 
 - Prefix routes with `/api`.
-- Resource-oriented paths: `/api/products`, `/api/products/:productId`.
+- Resource-oriented paths: `/api/posts`, `/api/posts/{publicId}`.
 - Methods: `GET` list/detail, `POST` create, `PUT`/`PATCH` update, `DELETE` delete.
 - List endpoints accept `page`, `per_page`, `search`, `sort`, `order`, and `filter[<field>]` query params; respond with `WithPaginatedData`.
-- Prefer `httprouter` or `chi`/`echo` — pick one router and stay consistent.
+- Router: standard library **`net/http` only** (Go 1.22+ `ServeMux` patterns). Do not add chi/gin/echo/httprouter.
+- JSON: **`encoding/json` only**.
 - Handler signatures stay thin; route registration can live in `handler.go` (`RegisterRoutes`) or `main.go`.
 
 ### Naming
 
-- Packages: short, lowercase, no underscores (`product`, `config`).
+- Packages: short, lowercase, no underscores (`post`, `config`).
 - Files: `handler.go`, `service.go`, `repository.go`, `model.go`.
-- Exported types: `Product`, `CreateRequest`, `Response`, `Service`, `Repository`, `Handler`.
+- Exported types: `Post`, `CreateRequest`, `Response`, `Service`, `Repository`, `Handler`.
+- Public identifier field: `PublicID` / JSON `public_id`.
 
 ### Makefile (expected targets)
 
@@ -298,35 +347,44 @@ GET /api/products?page=2&per_page=15&search=widget&sort=created_at&order=desc&fi
 ## Adding a New Feature (checklist)
 
 1. Create `internal/<feature>/` with `model.go`, `repository.go`, `service.go`, `handler.go`.
-2. Add migrations under `migrations/` if schema changes.
+2. Add migrations under `migrations/` if schema changes (`id` + `public_id`; FKs on `id`).
 3. Define repository + service interfaces; implement with constructors.
-4. Register routes and wire DI in `cmd/api/main.go`.
-5. Return all payloads through `internal/response`.
-6. Protect private routes with `internal/middleware` when needed.
+4. Register routes and wire DI in `cmd/api/main.go` (`net/http`).
+5. Return all payloads through `internal/response` with `public_id` only.
+6. Protect private routes with `internal/middleware` (JWT) when needed.
+7. For relations: resolve `public_id` → validate → use internal `id`.
 
 ---
 
 ## Do Not
 
-- Put business logic in handlers or SQL in services/handlers.
+- Put business logic in handlers or GORM/SQL in handlers (repositories own persistence).
 - Share mutable global DB/state without constructors.
 - Commit secrets, real credentials, or production `.env` values.
 - Mix multiple response JSON shapes for success/error.
 - Create anemic global `helper` dumping grounds — keep helpers next to the concern (`response`, `database`, or the feature).
 - Import another feature’s unexported internals; extract shared code to `internal/` shared packages only when truly cross-cutting.
+- Expose raw database `id` in APIs, or accept client-supplied numeric ids for lookups/FKs.
+- Introduce a third-party HTTP router or JSON library without an explicit project decision.
+- Store plaintext passwords or roll custom password hashing.
 
 ---
 
 ## Stack defaults (unless the user overrides)
 
-| Concern        | Default                                      |
-|----------------|----------------------------------------------|
-| Language       | Go (module mode)                             |
-| HTTP           | `net/http` + `httprouter` (or chi)           |
-| DB             | PostgreSQL + `database/sql`                  |
-| Validation     | `github.com/go-playground/validator/v10`     |
-| Config         | Env vars via `.env` + small config loader    |
-| Migrations     | SQL files in `migrations/` (golang-migrate)  |
-| Response       | `WithData` / `WithPaginatedData` / `WithMessage` / `Error` |
+| Concern        | Default                                                      |
+|----------------|--------------------------------------------------------------|
+| Language       | Go (module mode)                                             |
+| HTTP           | `net/http` (`ServeMux`)                                      |
+| JSON           | `encoding/json`                                              |
+| DB / ORM       | MySQL + GORM (`gorm.io/gorm`, `gorm.io/driver/mysql`)        |
+| Validation     | `github.com/go-playground/validator/v10`                     |
+| Passwords      | `golang.org/x/crypto/bcrypt`                                 |
+| Auth           | `github.com/golang-jwt/jwt/v5`                               |
+| Identifiers    | `public_id` external; `id` internal PK only                  |
+| Config         | Env vars via `.env` + small config loader                    |
+| Migrations     | SQL files in `migrations/` (golang-migrate, MySQL)           |
+| Response       | `WithData` / `WithPaginatedData` / `WithMessage` / `Error`   |
+| Decisions doc  | `docs/architecture.md`                                       |
 
 When generating code, match this skeleton and these conventions unless the user explicitly asks otherwise.

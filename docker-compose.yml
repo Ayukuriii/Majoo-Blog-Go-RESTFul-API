@@ -35,7 +35,8 @@ services:
     ports:
       - "8080:8080"
     environment:
-      HTTP_ADDR: ${HTTP_ADDR:-:8080}
+      PORT: ${PORT:-8080}
+      APP_ENV: ${APP_ENV:-production}
       DB_HOST: db
       DB_PORT: "3306"
       DB_USER: ${MYSQL_USER:-blog}
@@ -43,6 +44,7 @@ services:
       DB_NAME: ${MYSQL_DATABASE:-blog}
       DATABASE_URL: mysql://${MYSQL_USER:-blog}:${MYSQL_PASSWORD:-blogsecret}@tcp(db:3306)/${MYSQL_DATABASE:-blog}?multiStatements=true
       JWT_SECRET: ${JWT_SECRET:-change-me}
+      JWT_EXPIRY_MINUTES: ${JWT_EXPIRY_MINUTES:-60}
     depends_on:
       db:
         condition: service_healthy

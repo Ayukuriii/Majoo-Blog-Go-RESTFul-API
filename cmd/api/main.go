@@ -2,12 +2,31 @@ package main
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
+	"os"
 	"time"
+
+	"blog-api/internal/config"
 )
 
 func main() {
+	cfg, err := config.Load()
+	if err != nil {
+		// Use a temporary JSON logger so startup failures are still structured.
+		slog.New(slog.NewJSONHandler(os.Stderr, nil)).Error("config load failed", "error", err)
+		os.Exit(1)
+	}
+
+	logLevel := slog.LevelInfo
+	if cfg.Env == "development" || cfg.Env == "dev" {
+		logLevel = slog.LevelDebug
+	}
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: logLevel,
+	}))
+	slog.SetDefault(logger)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -15,16 +34,21 @@ func main() {
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 
+	addr := cfg.Addr()
 	srv := &http.Server{
-		Addr:         ":8080",
+		Addr:         addr,
 		Handler:      mux,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
 
-	log.Println("listening on :8080")
+	logger.Info("server starting",
+		"addr", addr,
+		"env", cfg.Env,
+	)
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatalf("server failed: %v", err)
+		logger.Error("server failed", "error", err)
+		os.Exit(1)
 	}
 }

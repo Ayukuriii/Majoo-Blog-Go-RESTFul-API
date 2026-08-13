@@ -2,14 +2,15 @@ package user
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-playground/validator/v10"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
@@ -58,22 +59,16 @@ func TestRegister_Valid(t *testing.T) {
 		Password:    "password1",
 		DisplayName: "Ada",
 	})
-	if err != nil {
-		t.Fatalf("Register: %v", err)
-	}
-	if res.PublicID == "" || res.Email != "a@example.com" || res.DisplayName == nil || *res.DisplayName != "Ada" {
-		t.Fatalf("unexpected response: %+v", res)
-	}
-	if created == nil || created.PasswordHash == "" || created.PasswordHash == "password1" {
-		t.Fatal("password must be hashed before Create")
-	}
-	if err := bcrypt.CompareHashAndPassword([]byte(created.PasswordHash), []byte("password1")); err != nil {
-		t.Fatalf("hash does not match password: %v", err)
-	}
-	// UUID v7 string form is 36 chars with hyphens
-	if len(created.PublicID) != 36 {
-		t.Fatalf("public_id length: %q", created.PublicID)
-	}
+	require.NoError(t, err)
+	require.NotEmpty(t, res.PublicID)
+	assert.Equal(t, "a@example.com", res.Email)
+	require.NotNil(t, res.DisplayName)
+	assert.Equal(t, "Ada", *res.DisplayName)
+	require.NotNil(t, created)
+	assert.NotEmpty(t, created.PasswordHash)
+	assert.NotEqual(t, "password1", created.PasswordHash)
+	require.NoError(t, bcrypt.CompareHashAndPassword([]byte(created.PasswordHash), []byte("password1")))
+	assert.Len(t, created.PublicID, 36)
 }
 
 func TestRegister_InvalidPayload(t *testing.T) {
@@ -82,9 +77,58 @@ func TestRegister_InvalidPayload(t *testing.T) {
 		Email:    "not-an-email",
 		Password: "short",
 	})
-	if err == nil {
-		t.Fatal("expected validation error")
+	require.Error(t, err)
+}
+
+func TestRegister_PasswordTooShort(t *testing.T) {
+	svc := newTestService(&mockRepo{})
+	_, err := svc.Register(context.Background(), RegisterRequest{
+		Email:    "a@example.com",
+		Password: "1234567",
+	})
+	require.Error(t, err)
+}
+
+func TestRegister_EmptyPassword(t *testing.T) {
+	svc := newTestService(&mockRepo{})
+	_, err := svc.Register(context.Background(), RegisterRequest{
+		Email:    "a@example.com",
+		Password: "",
+	})
+	require.Error(t, err)
+}
+
+func TestRegister_PasswordAtBcryptLimit(t *testing.T) {
+	var created *User
+	repo := &mockRepo{
+		createFn: func(_ context.Context, u *User) error {
+			created = u
+			return nil
+		},
 	}
+	svc := newTestService(repo)
+	password := strings.Repeat("a", 72)
+
+	_, err := svc.Register(context.Background(), RegisterRequest{
+		Email:    "a@example.com",
+		Password: password,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, created)
+	require.NoError(t, bcrypt.CompareHashAndPassword([]byte(created.PasswordHash), []byte(password)))
+}
+
+func TestRegister_PasswordExceedsBcryptLimit(t *testing.T) {
+	svc := newTestService(&mockRepo{createFn: func(context.Context, *User) error {
+		t.Fatal("Create must not run when hashing fails")
+		return nil
+	}})
+	_, err := svc.Register(context.Background(), RegisterRequest{
+		Email:    "a@example.com",
+		Password: strings.Repeat("a", 73),
+	})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, bcrypt.ErrPasswordTooLong)
 }
 
 func TestRegister_DuplicateEmail(t *testing.T) {
@@ -96,21 +140,17 @@ func TestRegister_DuplicateEmail(t *testing.T) {
 		Email:    "a@example.com",
 		Password: "password1",
 	})
-	if !errors.Is(err, ErrDuplicateEmail) {
-		t.Fatalf("want ErrDuplicateEmail, got %v", err)
-	}
+	assert.ErrorIs(t, err, ErrDuplicateEmail)
 }
 
 func TestLogin_Success_JWTSubIsPublicID(t *testing.T) {
 	hash, err := bcrypt.GenerateFromPassword([]byte("password1"), bcrypt.MinCost)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	const publicID = "0190f0e2-8c3a-7b2d-9e4f-1a2b3c4d5e6f"
 	repo := &mockRepo{
 		getByEmailFn: func(context.Context, string) (*User, error) {
 			return &User{
-				ID:           99, // must NOT appear in JWT
+				ID:           99,
 				PublicID:     publicID,
 				Email:        "a@example.com",
 				PasswordHash: string(hash),
@@ -123,36 +163,104 @@ func TestLogin_Success_JWTSubIsPublicID(t *testing.T) {
 		Email:    "a@example.com",
 		Password: "password1",
 	})
-	if err != nil {
-		t.Fatalf("Login: %v", err)
-	}
-	if token == "" || expiresAt.Before(time.Now()) {
-		t.Fatalf("bad token/expiry: %q %v", token, expiresAt)
-	}
+	require.NoError(t, err)
+	require.NotEmpty(t, token)
+	assert.True(t, expiresAt.After(time.Now()))
 
-	sub := jwtSubUnverified(t, token)
-	if sub != publicID {
-		t.Fatalf("sub=%q, want public_id %q", sub, publicID)
+	claims := parseValidToken(t, token, "test-secret")
+	assert.Equal(t, publicID, claims.Subject)
+	assert.NotEqual(t, "99", claims.Subject)
+	require.NotNil(t, claims.ExpiresAt)
+	assert.WithinDuration(t, expiresAt, claims.ExpiresAt.Time, time.Second)
+}
+
+func TestLogin_JWTRejectsTamperedToken(t *testing.T) {
+	hash, err := bcrypt.GenerateFromPassword([]byte("password1"), bcrypt.MinCost)
+	require.NoError(t, err)
+	repo := &mockRepo{
+		getByEmailFn: func(context.Context, string) (*User, error) {
+			return &User{PublicID: "user-1", Email: "a@example.com", PasswordHash: string(hash)}, nil
+		},
 	}
-	if sub == "99" {
-		t.Fatal("sub must not be internal id")
+	token, _, err := newTestService(repo).Login(context.Background(), LoginRequest{
+		Email: "a@example.com", Password: "password1",
+	})
+	require.NoError(t, err)
+
+	parts := strings.Split(token, ".")
+	require.Len(t, parts, 3)
+	tampered := parts[0] + "." + parts[1] + ".AAAA"
+	_, err = jwt.Parse(tampered, func(tkn *jwt.Token) (any, error) {
+		return []byte("test-secret"), nil
+	})
+	require.Error(t, err)
+}
+
+func TestLogin_JWTRejectsExpiredToken(t *testing.T) {
+	hash, err := bcrypt.GenerateFromPassword([]byte("password1"), bcrypt.MinCost)
+	require.NoError(t, err)
+	repo := &mockRepo{
+		getByEmailFn: func(context.Context, string) (*User, error) {
+			return &User{PublicID: "user-1", Email: "a@example.com", PasswordHash: string(hash)}, nil
+		},
 	}
+	svc := NewService(repo, validator.New(), "test-secret", -1, bcrypt.MinCost)
+	token, _, err := svc.Login(context.Background(), LoginRequest{
+		Email: "a@example.com", Password: "password1",
+	})
+	require.NoError(t, err)
+
+	_, err = jwt.Parse(token, func(tkn *jwt.Token) (any, error) {
+		return []byte("test-secret"), nil
+	})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, jwt.ErrTokenExpired)
+}
+
+func TestLogin_JWTRejectsWrongSecret(t *testing.T) {
+	hash, err := bcrypt.GenerateFromPassword([]byte("password1"), bcrypt.MinCost)
+	require.NoError(t, err)
+	repo := &mockRepo{
+		getByEmailFn: func(context.Context, string) (*User, error) {
+			return &User{PublicID: "user-1", Email: "a@example.com", PasswordHash: string(hash)}, nil
+		},
+	}
+	token, _, err := newTestService(repo).Login(context.Background(), LoginRequest{
+		Email: "a@example.com", Password: "password1",
+	})
+	require.NoError(t, err)
+
+	_, err = jwt.Parse(token, func(tkn *jwt.Token) (any, error) {
+		return []byte("other-secret"), nil
+	})
+	require.Error(t, err)
 }
 
 func TestLogin_WrongPassword(t *testing.T) {
-	hash, _ := bcrypt.GenerateFromPassword([]byte("password1"), bcrypt.MinCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte("password1"), bcrypt.MinCost)
+	require.NoError(t, err)
 	repo := &mockRepo{
 		getByEmailFn: func(context.Context, string) (*User, error) {
 			return &User{PublicID: "x", Email: "a@example.com", PasswordHash: string(hash)}, nil
 		},
 	}
 	svc := newTestService(repo)
-	_, _, err := svc.Login(context.Background(), LoginRequest{
+	_, _, err = svc.Login(context.Background(), LoginRequest{
 		Email: "a@example.com", Password: "wrong-password",
 	})
-	if !errors.Is(err, ErrInvalidCredentials) {
-		t.Fatalf("want ErrInvalidCredentials, got %v", err)
+	assert.ErrorIs(t, err, ErrInvalidCredentials)
+}
+
+func TestLogin_CorruptPasswordHash(t *testing.T) {
+	repo := &mockRepo{
+		getByEmailFn: func(context.Context, string) (*User, error) {
+			return &User{PublicID: "x", Email: "a@example.com", PasswordHash: "not-a-bcrypt-hash"}, nil
+		},
 	}
+	_, _, err := newTestService(repo).Login(context.Background(), LoginRequest{
+		Email: "a@example.com", Password: "password1",
+	})
+	assert.ErrorIs(t, err, ErrInvalidCredentials)
 }
 
 func TestLogin_UnknownEmail(t *testing.T) {
@@ -165,26 +273,61 @@ func TestLogin_UnknownEmail(t *testing.T) {
 	_, _, err := svc.Login(context.Background(), LoginRequest{
 		Email: "missing@example.com", Password: "password1",
 	})
-	if !errors.Is(err, ErrInvalidCredentials) {
-		t.Fatalf("want ErrInvalidCredentials (not ErrNotFound), got %v", err)
-	}
+	assert.ErrorIs(t, err, ErrInvalidCredentials)
+	assert.NotErrorIs(t, err, ErrNotFound)
 }
 
-// jwtSubUnverified base64-decodes the JWT payload (no signature check) for unit tests.
-func jwtSubUnverified(t *testing.T, token string) string {
+func TestGetByPublicID_UnknownVsMalformed(t *testing.T) {
+	const known = "0190f0e2-8c3a-7b2d-9e4f-1a2b3c4d5e6f"
+	repo := &mockRepo{
+		getByPublicIDFn: func(_ context.Context, publicID string) (*User, error) {
+			if publicID == known {
+				return &User{PublicID: known, Email: "a@example.com"}, nil
+			}
+			return nil, ErrNotFound
+		},
+	}
+	svc := newTestService(repo)
+
+	got, err := svc.GetByPublicID(context.Background(), known)
+	require.NoError(t, err)
+	assert.Equal(t, known, got.PublicID)
+
+	_, err = svc.GetByPublicID(context.Background(), "0190f0e2-8c3a-7b2d-9e4f-ffffffffffff")
+	assert.ErrorIs(t, err, ErrNotFound)
+
+	_, err = svc.GetByPublicID(context.Background(), "not-a-uuid")
+	assert.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestGetByEmail(t *testing.T) {
+	repo := &mockRepo{
+		getByEmailFn: func(_ context.Context, email string) (*User, error) {
+			if email == "a@example.com" {
+				return &User{PublicID: "user-1", Email: email, PasswordHash: "secret"}, nil
+			}
+			return nil, ErrNotFound
+		},
+	}
+	svc := newTestService(repo)
+
+	got, err := svc.GetByEmail(context.Background(), "a@example.com")
+	require.NoError(t, err)
+	assert.Equal(t, "user-1", got.PublicID)
+	assert.Equal(t, "a@example.com", got.Email)
+
+	_, err = svc.GetByEmail(context.Background(), "missing@example.com")
+	assert.ErrorIs(t, err, ErrNotFound)
+}
+
+func parseValidToken(t *testing.T, token, secret string) *jwt.RegisteredClaims {
 	t.Helper()
-	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
-		t.Fatalf("not a JWT: %q", token)
-	}
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		t.Fatalf("decode payload: %v", err)
-	}
-	var claims map[string]any
-	if err := json.Unmarshal(payload, &claims); err != nil {
-		t.Fatalf("json: %v", err)
-	}
-	sub, _ := claims["sub"].(string)
-	return sub
+	claims := &jwt.RegisteredClaims{}
+	parsed, err := jwt.ParseWithClaims(token, claims, func(tkn *jwt.Token) (any, error) {
+		require.Equal(t, jwt.SigningMethodHS256, tkn.Method)
+		return []byte(secret), nil
+	})
+	require.NoError(t, err)
+	require.True(t, parsed.Valid)
+	return claims
 }

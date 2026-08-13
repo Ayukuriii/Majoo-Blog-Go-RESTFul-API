@@ -22,6 +22,9 @@ go.work.sum
 vendor/
 .gopath/
 
+# Local Go module/build caches (not used by the Makefile; created if GOPATH/GOCACHE are pointed here)
+.gocache/
+
 # Environment
 .env
 

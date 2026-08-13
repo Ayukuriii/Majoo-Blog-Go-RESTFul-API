@@ -26,6 +26,19 @@ func RegisterAuthRoutes(mux *http.ServeMux, s Service) {
 	})
 }
 
+// register registers a new user.
+//
+//	@Summary		Register a user
+//	@Tags			auth
+//	@Accept			json
+//	@Produce		json
+//	@Param			body	body		RegisterRequest	true	"Registration payload"
+//	@Success		201		{object}	response.DataEnvelope{data=UserResponse}
+//	@Failure		400		{object}	response.MessageEnvelope
+//	@Failure		409		{object}	response.MessageEnvelope
+//	@Failure		422		{object}	response.ValidationEnvelope
+//	@Failure		500		{object}	response.MessageEnvelope
+//	@Router			/api/auth/register [post]
 func register(w http.ResponseWriter, r *http.Request, s Service) {
 	var req RegisterRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -50,6 +63,20 @@ func register(w http.ResponseWriter, r *http.Request, s Service) {
 	response.WithStatusData(w, http.StatusCreated, userResp, "User registered successfully")
 }
 
+// login authenticates a user and returns a JWT.
+//
+//	@Summary		Log in
+//	@Tags			auth
+//	@Accept			json
+//	@Produce		json
+//	@Param			body	body		LoginRequest	true	"Login payload"
+//	@Success		200		{object}	response.DataEnvelope{data=LoginData}
+//	@Failure		400		{object}	response.MessageEnvelope
+//	@Failure		401		{object}	response.MessageEnvelope
+//	@Failure		404		{object}	response.MessageEnvelope
+//	@Failure		422		{object}	response.ValidationEnvelope
+//	@Failure		500		{object}	response.MessageEnvelope
+//	@Router			/api/auth/login [post]
 func login(w http.ResponseWriter, r *http.Request, s Service) {
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -77,13 +104,24 @@ func login(w http.ResponseWriter, r *http.Request, s Service) {
 		return
 	}
 
-	response.WithData(w, map[string]any{
-		"user":       user,
-		"token":      token,
-		"expires_at": expiresAt,
+	response.WithData(w, LoginData{
+		User:      user,
+		Token:     token,
+		ExpiresAt: expiresAt,
 	}, "Login successful")
 }
 
+// me returns the authenticated user.
+//
+//	@Summary		Get current user
+//	@Tags			users
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Success		200	{object}	response.DataEnvelope{data=UserResponse}
+//	@Failure		401	{object}	response.MessageEnvelope
+//	@Failure		404	{object}	response.MessageEnvelope
+//	@Failure		500	{object}	response.MessageEnvelope
+//	@Router			/api/me [get]
 func me(w http.ResponseWriter, r *http.Request, s Service) {
 	publicID, ok := middleware.UserPublicIDFromContext(r.Context())
 	if !ok {

@@ -1,3 +1,13 @@
+// @title			Majoo Blog RESTful API
+// @version		1.0
+// @description	Blog platform API (users, posts, comments). Public identifiers are UUID v7 public_id values; raw database ids are never exposed.
+// @host			localhost:8080
+// @BasePath		/
+//
+// @securityDefinitions.apikey	BearerAuth
+// @in							header
+// @name						Authorization
+// @description				JWT. Swagger UI uses HTTP bearer (paste the token only).
 package main
 
 import (
@@ -7,6 +17,7 @@ import (
 	"os"
 	"time"
 
+	"blog-api/docs/swagger"
 	"blog-api/internal/comment"
 	"blog-api/internal/config"
 	"blog-api/internal/database"
@@ -15,6 +26,7 @@ import (
 	"blog-api/internal/user"
 
 	"github.com/go-playground/validator/v10"
+	httpSwagger "github.com/swaggo/http-swagger/v2"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -52,6 +64,12 @@ func main() {
 	commentService := comment.NewService(commentRepo, postRepo, userRepo, db, validate)
 
 	mux := http.NewServeMux()
+	// Exact path must win over /swagger/ so http-swagger does not call swag.ReadDoc
+	// (generated docs register swag/v2; http-swagger/v2 reads swag v1).
+	mux.HandleFunc("GET /swagger/doc.json", swagger.ServeSpec)
+	mux.Handle("/swagger/", httpSwagger.Handler(
+		httpSwagger.URL("doc.json"),
+	))
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)

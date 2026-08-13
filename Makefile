@@ -1,4 +1,4 @@
-.PHONY: run build test test-coverage test-integration migrate-install migrate-up migrate-down docker-up docker-down
+.PHONY: run build test test-coverage test-integration migrate-install migrate-up migrate-down docker-up docker-down docs
 
 APP_NAME := blog-api
 MIGRATE  ?= migrate
@@ -46,3 +46,16 @@ docker-up:
 
 docker-down:
 	docker compose down
+
+# OpenAPI 3.0.3 spec: docs/openapi.yaml (generated Go package under docs/swagger/).
+SWAG_VERSION := v2.0.0-rc5
+docs:
+	go run github.com/swaggo/swag/v2/cmd/swag@$(SWAG_VERSION) init \
+		-g cmd/api/main.go \
+		-o docs/swagger \
+		--packageName swagger \
+		--parseInternal \
+		--parseDependency \
+		--outputTypes json,yaml
+	python3 scripts/normalize_openapi.py
+	rm -f docs/swagger/docs.go

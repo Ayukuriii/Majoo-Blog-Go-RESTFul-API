@@ -1,0 +1,733 @@
+basePath: /
+definitions:
+  blog-api_internal_response.DataEnvelope:
+    properties:
+      data: {}
+      message:
+        type: string
+    type: object
+  blog-api_internal_response.Links:
+    properties:
+      first:
+        type: string
+      last:
+        type: string
+      next:
+        type: string
+      prev:
+        type: string
+    type: object
+  blog-api_internal_response.MessageEnvelope:
+    properties:
+      message:
+        type: string
+    type: object
+  blog-api_internal_response.Meta:
+    properties:
+      current_page:
+        type: integer
+      filters:
+        additionalProperties: {}
+        type: object
+      from:
+        type: integer
+      last_page:
+        type: integer
+      order:
+        description: asc | desc
+        type: string
+      path:
+        type: string
+      per_page:
+        type: integer
+      search:
+        type: string
+      sort:
+        type: string
+      to:
+        type: integer
+      total:
+        type: integer
+    type: object
+  blog-api_internal_response.PaginatedEnvelope:
+    properties:
+      data: {}
+      links:
+        $ref: '#/definitions/blog-api_internal_response.Links'
+      message:
+        type: string
+      meta:
+        $ref: '#/definitions/blog-api_internal_response.Meta'
+    type: object
+  blog-api_internal_response.ValidationEnvelope:
+    properties:
+      errors:
+        additionalProperties:
+          type: string
+        type: object
+      message:
+        type: string
+    type: object
+  internal_comment.AuthorRef:
+    properties:
+      public_id:
+        type: string
+    type: object
+  internal_comment.CommentResponse:
+    properties:
+      author:
+        $ref: '#/definitions/internal_comment.AuthorRef'
+      body:
+        type: string
+      created_at:
+        type: string
+      post:
+        $ref: '#/definitions/internal_comment.PostRef'
+      public_id:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  internal_comment.CreateCommentRequest:
+    properties:
+      body:
+        type: string
+      post_public_id:
+        type: string
+    required:
+    - body
+    - post_public_id
+    type: object
+  internal_comment.PostRef:
+    properties:
+      public_id:
+        type: string
+    type: object
+  internal_post.AuthorRef:
+    properties:
+      public_id:
+        type: string
+    type: object
+  internal_post.CreatePostRequest:
+    properties:
+      body:
+        type: string
+      title:
+        maxLength: 255
+        type: string
+    required:
+    - body
+    - title
+    type: object
+  internal_post.PostResponse:
+    properties:
+      author:
+        $ref: '#/definitions/internal_post.AuthorRef'
+      body:
+        type: string
+      created_at:
+        type: string
+      public_id:
+        type: string
+      status:
+        type: string
+      title:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  internal_post.UpdatePostRequest:
+    properties:
+      body:
+        type: string
+      title:
+        maxLength: 255
+        type: string
+    type: object
+  internal_user.LoginData:
+    properties:
+      expires_at:
+        type: string
+      token:
+        type: string
+      user:
+        $ref: '#/definitions/internal_user.UserResponse'
+    type: object
+  internal_user.LoginRequest:
+    properties:
+      email:
+        type: string
+      password:
+        type: string
+    required:
+    - email
+    - password
+    type: object
+  internal_user.RegisterRequest:
+    properties:
+      display_name:
+        type: string
+      email:
+        type: string
+      password:
+        minLength: 8
+        type: string
+    required:
+    - email
+    - password
+    type: object
+  internal_user.UserResponse:
+    properties:
+      created_at:
+        type: string
+      display_name:
+        type: string
+      email:
+        type: string
+      public_id:
+        type: string
+      updated_at:
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact: {}
+  description: Blog platform API (users, posts, comments). Public identifiers are
+    UUID v7 public_id values; raw database ids are never exposed.
+  title: Majoo Blog RESTful API
+  version: "1.0"
+paths:
+  /api/auth/login:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Login payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_user.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/blog-api_internal_response.DataEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_user.LoginData'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.ValidationEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+      summary: Log in
+      tags:
+      - auth
+  /api/auth/register:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Registration payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_user.RegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/blog-api_internal_response.DataEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_user.UserResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.ValidationEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+      summary: Register a user
+      tags:
+      - auth
+  /api/comments/{publicId}:
+    delete:
+      parameters:
+      - description: Comment public_id (UUID v7)
+        in: path
+        name: publicId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+      security:
+      - BearerAuth: []
+      summary: Delete a comment
+      tags:
+      - comments
+  /api/me:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/blog-api_internal_response.DataEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_user.UserResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+      security:
+      - BearerAuth: []
+      summary: Get current user
+      tags:
+      - users
+  /api/posts:
+    get:
+      parameters:
+      - default: 1
+        description: 1-based page index
+        in: query
+        name: page
+        type: integer
+      - default: 15
+        description: Page size (max 100)
+        in: query
+        name: per_page
+        type: integer
+      - description: Free-text search
+        in: query
+        name: search
+        type: string
+      - description: Sort column (created_at, title)
+        in: query
+        name: sort
+        type: string
+      - description: Sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      - description: Exact status filter
+        enum:
+        - draft
+        - published
+        in: query
+        name: filter[status]
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/blog-api_internal_response.PaginatedEnvelope'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/internal_post.PostResponse'
+                  type: array
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+      summary: List posts
+      tags:
+      - posts
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Post payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_post.CreatePostRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/blog-api_internal_response.DataEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_post.PostResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.ValidationEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+      security:
+      - BearerAuth: []
+      summary: Create a post
+      tags:
+      - posts
+  /api/posts/{publicId}:
+    delete:
+      parameters:
+      - description: Post public_id (UUID v7)
+        in: path
+        name: publicId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+      security:
+      - BearerAuth: []
+      summary: Delete a post
+      tags:
+      - posts
+    get:
+      parameters:
+      - description: Post public_id (UUID v7)
+        in: path
+        name: publicId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/blog-api_internal_response.DataEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_post.PostResponse'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+      summary: Get a post
+      tags:
+      - posts
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Post public_id (UUID v7)
+        in: path
+        name: publicId
+        required: true
+        type: string
+      - description: Fields to update
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_post.UpdatePostRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/blog-api_internal_response.DataEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_post.PostResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.ValidationEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+      security:
+      - BearerAuth: []
+      summary: Update a post
+      tags:
+      - posts
+  /api/posts/{publicId}/comments:
+    get:
+      parameters:
+      - description: Post public_id (UUID v7)
+        in: path
+        name: publicId
+        required: true
+        type: string
+      - default: 1
+        description: 1-based page index
+        in: query
+        name: page
+        type: integer
+      - default: 15
+        description: Page size (max 100)
+        in: query
+        name: per_page
+        type: integer
+      - description: Free-text search
+        in: query
+        name: search
+        type: string
+      - description: Sort column (created_at)
+        in: query
+        name: sort
+        type: string
+      - description: Sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/blog-api_internal_response.PaginatedEnvelope'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/internal_comment.CommentResponse'
+                  type: array
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+      summary: List comments
+      tags:
+      - comments
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Post public_id (UUID v7)
+        in: path
+        name: publicId
+        required: true
+        type: string
+      - description: Comment payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_comment.CreateCommentRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/blog-api_internal_response.DataEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_comment.CommentResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.ValidationEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+      security:
+      - BearerAuth: []
+      summary: Create a comment
+      tags:
+      - comments
+  /api/posts/{publicId}/publish:
+    post:
+      parameters:
+      - description: Post public_id (UUID v7)
+        in: path
+        name: publicId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/blog-api_internal_response.DataEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_post.PostResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/blog-api_internal_response.MessageEnvelope'
+      security:
+      - BearerAuth: []
+      summary: Publish a post
+      tags:
+      - posts
+securityDefinitions:
+  BearerAuth:
+    description: JWT. Swagger UI uses HTTP bearer (paste the token only).
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

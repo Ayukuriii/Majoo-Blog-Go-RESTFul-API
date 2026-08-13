@@ -32,6 +32,20 @@ func RegisterRoutes(mux *http.ServeMux, s Service, auth func(http.Handler) http.
 	})))
 }
 
+// create creates a draft post for the authenticated user.
+//
+//	@Summary		Create a post
+//	@Tags			posts
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			body	body		CreatePostRequest	true	"Post payload"
+//	@Success		201		{object}	response.DataEnvelope{data=PostResponse}
+//	@Failure		400		{object}	response.MessageEnvelope
+//	@Failure		401		{object}	response.MessageEnvelope
+//	@Failure		422		{object}	response.ValidationEnvelope
+//	@Failure		500		{object}	response.MessageEnvelope
+//	@Router			/api/posts [post]
 func create(w http.ResponseWriter, r *http.Request, s Service) {
 	authorPublicID, ok := callerPublicID(w, r)
 	if !ok {
@@ -50,6 +64,20 @@ func create(w http.ResponseWriter, r *http.Request, s Service) {
 	response.WithStatusData(w, http.StatusCreated, out, "Post created")
 }
 
+// list returns a paginated list of posts.
+//
+//	@Summary		List posts
+//	@Tags			posts
+//	@Produce		json
+//	@Param			page			query		int		false	"1-based page index"	default(1)
+//	@Param			per_page		query		int		false	"Page size (max 100)"	default(15)
+//	@Param			search			query		string	false	"Free-text search"
+//	@Param			sort			query		string	false	"Sort column (created_at, title)"
+//	@Param			order			query		string	false	"Sort direction"	Enums(asc, desc)
+//	@Param			filter[status]	query		string	false	"Exact status filter"	Enums(draft, published)
+//	@Success		200				{object}	response.PaginatedEnvelope{data=[]PostResponse}
+//	@Failure		500				{object}	response.MessageEnvelope
+//	@Router			/api/posts [get]
 func list(w http.ResponseWriter, r *http.Request, s Service) {
 	out, meta, links, err := s.List(r.Context(), parseListQuery(r))
 	if err != nil {
@@ -59,6 +87,16 @@ func list(w http.ResponseWriter, r *http.Request, s Service) {
 	response.WithPaginatedData(w, out, meta, links, "Posts retrieved")
 }
 
+// get returns a single post by public_id.
+//
+//	@Summary		Get a post
+//	@Tags			posts
+//	@Produce		json
+//	@Param			publicId	path		string	true	"Post public_id (UUID v7)"
+//	@Success		200			{object}	response.DataEnvelope{data=PostResponse}
+//	@Failure		404			{object}	response.MessageEnvelope
+//	@Failure		500			{object}	response.MessageEnvelope
+//	@Router			/api/posts/{publicId} [get]
 func get(w http.ResponseWriter, r *http.Request, s Service) {
 	out, err := s.Get(r.Context(), r.PathValue("publicId"))
 	if err != nil {
@@ -68,6 +106,23 @@ func get(w http.ResponseWriter, r *http.Request, s Service) {
 	response.WithData(w, out, "Post retrieved")
 }
 
+// update partially updates a post owned by the caller.
+//
+//	@Summary		Update a post
+//	@Tags			posts
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			publicId	path		string				true	"Post public_id (UUID v7)"
+//	@Param			body		body		UpdatePostRequest	true	"Fields to update"
+//	@Success		200			{object}	response.DataEnvelope{data=PostResponse}
+//	@Failure		400			{object}	response.MessageEnvelope
+//	@Failure		401			{object}	response.MessageEnvelope
+//	@Failure		403			{object}	response.MessageEnvelope
+//	@Failure		404			{object}	response.MessageEnvelope
+//	@Failure		422			{object}	response.ValidationEnvelope
+//	@Failure		500			{object}	response.MessageEnvelope
+//	@Router			/api/posts/{publicId} [patch]
 func update(w http.ResponseWriter, r *http.Request, s Service) {
 	authorPublicID, ok := callerPublicID(w, r)
 	if !ok {
@@ -86,6 +141,19 @@ func update(w http.ResponseWriter, r *http.Request, s Service) {
 	response.WithData(w, out, "Post updated")
 }
 
+// remove soft-deletes a post owned by the caller.
+//
+//	@Summary		Delete a post
+//	@Tags			posts
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			publicId	path		string	true	"Post public_id (UUID v7)"
+//	@Success		200			{object}	response.MessageEnvelope
+//	@Failure		401			{object}	response.MessageEnvelope
+//	@Failure		403			{object}	response.MessageEnvelope
+//	@Failure		404			{object}	response.MessageEnvelope
+//	@Failure		500			{object}	response.MessageEnvelope
+//	@Router			/api/posts/{publicId} [delete]
 func remove(w http.ResponseWriter, r *http.Request, s Service) {
 	authorPublicID, ok := callerPublicID(w, r)
 	if !ok {
@@ -98,6 +166,19 @@ func remove(w http.ResponseWriter, r *http.Request, s Service) {
 	response.WithMessage(w, "Post deleted")
 }
 
+// publish publishes a post owned by the caller.
+//
+//	@Summary		Publish a post
+//	@Tags			posts
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			publicId	path		string	true	"Post public_id (UUID v7)"
+//	@Success		200			{object}	response.DataEnvelope{data=PostResponse}
+//	@Failure		401			{object}	response.MessageEnvelope
+//	@Failure		403			{object}	response.MessageEnvelope
+//	@Failure		404			{object}	response.MessageEnvelope
+//	@Failure		500			{object}	response.MessageEnvelope
+//	@Router			/api/posts/{publicId}/publish [post]
 func publish(w http.ResponseWriter, r *http.Request, s Service) {
 	authorPublicID, ok := callerPublicID(w, r)
 	if !ok {

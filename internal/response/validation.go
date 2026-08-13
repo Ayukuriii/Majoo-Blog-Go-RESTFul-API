@@ -18,7 +18,7 @@ import (
 //	}
 func ValidationError(w http.ResponseWriter, errs validator.ValidationErrors) {
 	msg := "validation failed"
-	writeJSON(w, http.StatusUnprocessableEntity, envelope{
+	writeJSON(w, http.StatusUnprocessableEntity, Envelope{
 		Message: &msg,
 		Errors:  ValidationErrors(errs),
 	})

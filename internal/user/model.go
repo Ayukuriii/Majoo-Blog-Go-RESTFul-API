@@ -43,3 +43,10 @@ type UserResponse struct {
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
+
+// LoginData is the data object returned by POST /api/auth/login.
+type LoginData struct {
+	User      UserResponse `json:"user"`
+	Token     string       `json:"token"`
+	ExpiresAt time.Time    `json:"expires_at"`
+}

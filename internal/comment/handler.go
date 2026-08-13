@@ -25,6 +25,22 @@ func RegisterRoutes(mux *http.ServeMux, s Service, auth func(http.Handler) http.
 	})))
 }
 
+// create adds a comment on a post.
+//
+//	@Summary		Create a comment
+//	@Tags			comments
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			publicId	path		string					true	"Post public_id (UUID v7)"
+//	@Param			body		body		CreateCommentRequest	true	"Comment payload"
+//	@Success		201			{object}	response.DataEnvelope{data=CommentResponse}
+//	@Failure		400			{object}	response.MessageEnvelope
+//	@Failure		401			{object}	response.MessageEnvelope
+//	@Failure		404			{object}	response.MessageEnvelope
+//	@Failure		422			{object}	response.ValidationEnvelope
+//	@Failure		500			{object}	response.MessageEnvelope
+//	@Router			/api/posts/{publicId}/comments [post]
 func create(w http.ResponseWriter, r *http.Request, s Service) {
 	callerPublicID, ok := callerPublicID(w, r)
 	if !ok {
@@ -50,6 +66,21 @@ func create(w http.ResponseWriter, r *http.Request, s Service) {
 	response.WithStatusData(w, http.StatusCreated, out, "Comment created")
 }
 
+// list returns a paginated list of comments on a post.
+//
+//	@Summary		List comments
+//	@Tags			comments
+//	@Produce		json
+//	@Param			publicId	path		string	true	"Post public_id (UUID v7)"
+//	@Param			page		query		int		false	"1-based page index"	default(1)
+//	@Param			per_page	query		int		false	"Page size (max 100)"	default(15)
+//	@Param			search		query		string	false	"Free-text search"
+//	@Param			sort		query		string	false	"Sort column (created_at)"
+//	@Param			order		query		string	false	"Sort direction"	Enums(asc, desc)
+//	@Success		200			{object}	response.PaginatedEnvelope{data=[]CommentResponse}
+//	@Failure		404			{object}	response.MessageEnvelope
+//	@Failure		500			{object}	response.MessageEnvelope
+//	@Router			/api/posts/{publicId}/comments [get]
 func list(w http.ResponseWriter, r *http.Request, s Service) {
 	out, meta, links, err := s.List(r.Context(), r.PathValue("publicId"), parseListQuery(r))
 	if err != nil {
@@ -59,6 +90,19 @@ func list(w http.ResponseWriter, r *http.Request, s Service) {
 	response.WithPaginatedData(w, out, meta, links, "Comments retrieved")
 }
 
+// remove soft-deletes a comment (author or post owner).
+//
+//	@Summary		Delete a comment
+//	@Tags			comments
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			publicId	path		string	true	"Comment public_id (UUID v7)"
+//	@Success		200			{object}	response.MessageEnvelope
+//	@Failure		401			{object}	response.MessageEnvelope
+//	@Failure		403			{object}	response.MessageEnvelope
+//	@Failure		404			{object}	response.MessageEnvelope
+//	@Failure		500			{object}	response.MessageEnvelope
+//	@Router			/api/comments/{publicId} [delete]
 func remove(w http.ResponseWriter, r *http.Request, s Service) {
 	callerPublicID, ok := callerPublicID(w, r)
 	if !ok {

@@ -11,15 +11,16 @@ import (
 
 // Config holds application configuration loaded from environment variables.
 type Config struct {
-	Port             int
-	DBHost           string
-	DBPort           int
-	DBUser           string
-	DBPassword       string
-	DBName           string
-	JWTSecret        string
-	JWTExpiryMinutes int
-	Env              string
+	Port               int
+	DBHost             string
+	DBPort             int
+	DBUser             string
+	DBPassword         string
+	DBName             string
+	JWTSecret          string
+	JWTExpiryMinutes   int
+	Env                string
+	CORSAllowedOrigins []string
 }
 
 // Load reads configuration from the environment.
@@ -49,15 +50,16 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		Port:             port,
-		DBHost:           strings.TrimSpace(os.Getenv("DB_HOST")),
-		DBPort:           dbPort,
-		DBUser:           strings.TrimSpace(os.Getenv("DB_USER")),
-		DBPassword:       os.Getenv("DB_PASSWORD"),
-		DBName:           strings.TrimSpace(os.Getenv("DB_NAME")),
-		JWTSecret:        os.Getenv("JWT_SECRET"),
-		JWTExpiryMinutes: jwtExpiry,
-		Env:              env,
+		Port:               port,
+		DBHost:             strings.TrimSpace(os.Getenv("DB_HOST")),
+		DBPort:             dbPort,
+		DBUser:             strings.TrimSpace(os.Getenv("DB_USER")),
+		DBPassword:         os.Getenv("DB_PASSWORD"),
+		DBName:             strings.TrimSpace(os.Getenv("DB_NAME")),
+		JWTSecret:          os.Getenv("JWT_SECRET"),
+		JWTExpiryMinutes:   jwtExpiry,
+		Env:                env,
+		CORSAllowedOrigins: parseCSV(os.Getenv("CORS_ALLOWED_ORIGINS")),
 	}
 
 	if err := cfg.validate(); err != nil {
@@ -70,6 +72,11 @@ func Load() (*Config, error) {
 // Addr returns the HTTP listen address (e.g. ":8080").
 func (c *Config) Addr() string {
 	return fmt.Sprintf(":%d", c.Port)
+}
+
+// IsProduction reports whether the process is running in production.
+func (c *Config) IsProduction() bool {
+	return isProduction(c.Env)
 }
 
 // DSN returns a MySQL DSN suitable for GORM's MySQL dialector.
@@ -143,4 +150,19 @@ func getEnv(key, fallback string) string {
 		return strings.TrimSpace(v)
 	}
 	return fallback
+}
+
+func parseCSV(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }

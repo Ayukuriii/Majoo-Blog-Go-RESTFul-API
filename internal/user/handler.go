@@ -11,6 +11,12 @@ import (
 )
 
 func RegisterRoutes(mux *http.ServeMux, s Service, auth func(http.Handler) http.Handler) {
+	mux.Handle("GET /api/me", auth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		me(w, r, s)
+	})))
+}
+
+func RegisterAuthRoutes(mux *http.ServeMux, s Service) {
 	mux.HandleFunc("POST /api/auth/register", func(w http.ResponseWriter, r *http.Request) {
 		register(w, r, s)
 	})
@@ -18,10 +24,6 @@ func RegisterRoutes(mux *http.ServeMux, s Service, auth func(http.Handler) http.
 	mux.HandleFunc("POST /api/auth/login", func(w http.ResponseWriter, r *http.Request) {
 		login(w, r, s)
 	})
-
-	mux.Handle("GET /api/me", auth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		me(w, r, s)
-	})))
 }
 
 func register(w http.ResponseWriter, r *http.Request, s Service) {

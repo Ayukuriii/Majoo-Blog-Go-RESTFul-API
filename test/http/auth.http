@@ -87,11 +87,73 @@ POST {{baseUrl}}/api/auth/login
 Accept: {{contentJson}}
 Content-Type: {{contentJson}}
 
-{not-json
+{not-json}
 
 ### Negative: GET /api/auth/login — method not allowed
 GET {{baseUrl}}/api/auth/login
 Accept: {{contentJson}}
+
+### Negative: POST /api/auth/login — too many requests (429)
+# Token bucket is 5 req/min per IP on /api/auth/*. Run the six requests below
+# (or Send All on this file after other auth calls) until the 6th returns 429.
+POST {{baseUrl}}/api/auth/login
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+
+{
+  "email": "{{email}}",
+  "password": "wrong-password"
+}
+
+### Negative: POST /api/auth/login — rate-limit probe 2
+POST {{baseUrl}}/api/auth/login
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+
+{
+  "email": "{{email}}",
+  "password": "wrong-password"
+}
+
+### Negative: POST /api/auth/login — rate-limit probe 3
+POST {{baseUrl}}/api/auth/login
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+
+{
+  "email": "{{email}}",
+  "password": "wrong-password"
+}
+
+### Negative: POST /api/auth/login — rate-limit probe 4
+POST {{baseUrl}}/api/auth/login
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+
+{
+  "email": "{{email}}",
+  "password": "wrong-password"
+}
+
+### Negative: POST /api/auth/login — rate-limit probe 5
+POST {{baseUrl}}/api/auth/login
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+
+{
+  "email": "{{email}}",
+  "password": "wrong-password"
+}
+
+### Negative: POST /api/auth/login — rate-limit probe 6 (expect 429)
+POST {{baseUrl}}/api/auth/login
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+
+{
+  "email": "{{email}}",
+  "password": "wrong-password"
+}
 
 @token = {{Login.response.body.data.token}}
 ### Positive: GET /api/me — authenticated

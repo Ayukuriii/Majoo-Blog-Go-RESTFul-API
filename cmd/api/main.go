@@ -58,16 +58,32 @@ func main() {
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 
+	if !cfg.IsProduction() {
+		mux.HandleFunc("GET /api/debug/panic", func(http.ResponseWriter, *http.Request) {
+			panic("deliberate panic")
+		})
+	}
+
 	auth := middleware.Auth(cfg.JWTSecret)
+
+	authMux := http.NewServeMux()
+	user.RegisterAuthRoutes(authMux, userService)
+	mux.Handle("/api/auth/", middleware.RateLimitByIP(5)(authMux))
 
 	user.RegisterRoutes(mux, userService, auth)
 	post.RegisterRoutes(mux, postService, auth)
 	comment.RegisterRoutes(mux, commentService, auth)
 
+	handler := middleware.Chain(mux,
+		middleware.Recovery(logger),
+		middleware.Logging(logger),
+		middleware.CORS(cfg.CORSAllowedOrigins),
+	)
+
 	addr := cfg.Addr()
 	srv := &http.Server{
 		Addr:         addr,
-		Handler:      mux,
+		Handler:      handler,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,

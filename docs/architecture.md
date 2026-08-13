@@ -82,7 +82,7 @@ This document records the stack and design choices for the Majoo Blog RESTful AP
 **Conventions:**
 
 - Register routes under `/api/...`.
-- Wrap the mux with shared middleware (recovery, auth, CORS) in `cmd/api/main.go`.
+- Wrap the mux with shared middleware (recovery, logging, CORS) in `cmd/api/main.go`; apply per-IP rate limiting only to `/api/auth/*`.
 - Feature handlers stay thin: decode → call service → write `internal/response` helpers.
 
 ---

@@ -33,6 +33,7 @@ func TestLoad_Success(t *testing.T) {
 	t.Setenv("DB_NAME", "blog")
 	t.Setenv("JWT_SECRET", "super-secret")
 	t.Setenv("JWT_EXPIRY_MINUTES", "120")
+	t.Setenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000, https://blog.example")
 
 	cfg, err := Load()
 	if err != nil {
@@ -54,6 +55,11 @@ func TestLoad_Success(t *testing.T) {
 	if cfg.Env != "production" {
 		t.Errorf("Env = %q, want production", cfg.Env)
 	}
+	if len(cfg.CORSAllowedOrigins) != 2 ||
+		cfg.CORSAllowedOrigins[0] != "http://localhost:3000" ||
+		cfg.CORSAllowedOrigins[1] != "https://blog.example" {
+		t.Errorf("CORSAllowedOrigins = %#v", cfg.CORSAllowedOrigins)
+	}
 }
 
 func clearConfigEnv(t *testing.T) {
@@ -61,7 +67,7 @@ func clearConfigEnv(t *testing.T) {
 	keys := []string{
 		"APP_ENV", "ENV", "PORT",
 		"DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME",
-		"JWT_SECRET", "JWT_EXPIRY_MINUTES",
+		"JWT_SECRET", "JWT_EXPIRY_MINUTES", "CORS_ALLOWED_ORIGINS",
 	}
 	for _, k := range keys {
 		_ = os.Unsetenv(k)

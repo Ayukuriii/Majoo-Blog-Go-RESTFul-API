@@ -11,7 +11,10 @@ import (
 
 type contextKey int
 
-const userPublicIDKey contextKey = iota
+const (
+	userPublicIDKey contextKey = iota
+	requestIDKey
+)
 
 // Auth returns middleware that requires a valid Bearer JWT signed with jwtSecret.
 // On success it injects the token's `sub` claim (user public_id) into the request context.

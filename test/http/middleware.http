@@ -1,0 +1,21 @@
+@baseUrl = http://localhost:8080
+@contentJson = application/json
+
+### Positive: GET /api/debug/panic — recovered 500 (non-production only)
+GET {{baseUrl}}/api/debug/panic
+Accept: {{contentJson}}
+
+### Positive: GET /health — still healthy after panic
+GET {{baseUrl}}/health
+Accept: {{contentJson}}
+
+### Positive: OPTIONS /health — CORS preflight (allowed origin)
+OPTIONS {{baseUrl}}/health
+Origin: http://localhost:3000
+Access-Control-Request-Method: GET
+Access-Control-Request-Headers: Content-Type
+
+### Negative: GET /health — CORS origin not allowed (no ACAO when CORS_ALLOWED_ORIGINS is not *)
+GET {{baseUrl}}/health
+Accept: {{contentJson}}
+Origin: https://evil.example

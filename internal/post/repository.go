@@ -45,6 +45,7 @@ type ListQuery struct {
 type Repository interface {
 	WithTx(tx *gorm.DB) Repository
 	Create(ctx context.Context, post *Post) error
+	GetByID(ctx context.Context, id uint64) (*Post, error)
 	GetByPublicID(ctx context.Context, publicID string) (*Post, error)
 	List(ctx context.Context, q ListQuery) (posts []Post, total int64, err error)
 	Update(ctx context.Context, post *Post) error
@@ -67,6 +68,18 @@ func (r *repository) WithTx(tx *gorm.DB) Repository {
 
 func (r *repository) Create(ctx context.Context, post *Post) error {
 	return r.db.WithContext(ctx).Create(post).Error
+}
+
+func (r *repository) GetByID(ctx context.Context, id uint64) (*Post, error) {
+	var p Post
+	err := r.db.WithContext(ctx).Where("id = ?", id).First(&p).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &p, nil
 }
 
 func (r *repository) GetByPublicID(ctx context.Context, publicID string) (*Post, error) {

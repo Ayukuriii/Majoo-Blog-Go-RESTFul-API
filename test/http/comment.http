@@ -1,0 +1,158 @@
+@baseUrl = http://localhost:8080
+@contentJson = application/json
+@email = john.doe@example.com
+@password = password123
+@otherEmail = jane.doe@example.com
+@otherPassword = password123
+@missingPublicId = 01900000-0000-7000-8000-000000000000
+
+### Positive: POST /api/auth/login — post author
+# @name LoginAuthor
+POST {{baseUrl}}/api/auth/login
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+
+{
+  "email": "{{email}}",
+  "password": "{{password}}"
+}
+
+@authorToken = {{LoginAuthor.response.body.data.token}}
+
+### Positive: POST /api/auth/login — commenter
+# @name LoginCommenter
+POST {{baseUrl}}/api/auth/login
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+
+{
+  "email": "{{otherEmail}}",
+  "password": "{{otherPassword}}"
+}
+
+@commenterToken = {{LoginCommenter.response.body.data.token}}
+
+### Positive: POST /api/posts — parent post
+# @name CreatePost
+POST {{baseUrl}}/api/posts
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+Authorization: Bearer {{authorToken}}
+
+{
+  "title": "Post for comments",
+  "body": "Parent body"
+}
+
+@postPublicId = {{CreatePost.response.body.data.public_id}}
+
+### Positive: POST /api/posts/{publicId}/comments
+# @name CreateComment
+POST {{baseUrl}}/api/posts/{{postPublicId}}/comments
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+Authorization: Bearer {{commenterToken}}
+
+{
+  "post_public_id": "{{postPublicId}}",
+  "body": "Nice post"
+}
+
+@commentPublicId = {{CreateComment.response.body.data.public_id}}
+
+### Negative: POST comments — missing token (401)
+POST {{baseUrl}}/api/posts/{{postPublicId}}/comments
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+
+{
+  "body": "no token"
+}
+
+### Negative: POST comments — invalid token (401)
+POST {{baseUrl}}/api/posts/{{postPublicId}}/comments
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+Authorization: Bearer not-a-real-token
+
+{
+  "body": "bad token"
+}
+
+### Negative: POST comments — validation error (empty body)
+POST {{baseUrl}}/api/posts/{{postPublicId}}/comments
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+Authorization: Bearer {{commenterToken}}
+
+{}
+
+### Negative: POST comments — post not found
+POST {{baseUrl}}/api/posts/{{missingPublicId}}/comments
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+Authorization: Bearer {{commenterToken}}
+
+{
+  "body": "orphan"
+}
+
+### Negative: POST comments — post_public_id mismatches path
+POST {{baseUrl}}/api/posts/{{postPublicId}}/comments
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+Authorization: Bearer {{commenterToken}}
+
+{
+  "post_public_id": "{{missingPublicId}}",
+  "body": "mismatch"
+}
+
+### Positive: GET /api/posts/{publicId}/comments — public list
+GET {{baseUrl}}/api/posts/{{postPublicId}}/comments?page=1&per_page=15&sort=created_at&order=desc
+Accept: {{contentJson}}
+
+### Positive: GET comments — empty page still 200
+GET {{baseUrl}}/api/posts/{{postPublicId}}/comments?page=99&per_page=15
+Accept: {{contentJson}}
+
+### Negative: GET comments — post not found
+GET {{baseUrl}}/api/posts/{{missingPublicId}}/comments
+Accept: {{contentJson}}
+
+### Negative: DELETE /api/comments/{publicId} — missing token (401)
+DELETE {{baseUrl}}/api/comments/{{commentPublicId}}
+Accept: {{contentJson}}
+
+### Negative: DELETE — invalid token (401)
+DELETE {{baseUrl}}/api/comments/{{commentPublicId}}
+Accept: {{contentJson}}
+Authorization: Bearer not-a-real-token
+
+### Negative: DELETE — not found
+DELETE {{baseUrl}}/api/comments/{{missingPublicId}}
+Accept: {{contentJson}}
+Authorization: Bearer {{commenterToken}}
+
+### Positive: DELETE — comment author
+DELETE {{baseUrl}}/api/comments/{{commentPublicId}}
+Accept: {{contentJson}}
+Authorization: Bearer {{commenterToken}}
+
+### Positive: POST another comment (for post-author delete)
+# @name CreateComment2
+POST {{baseUrl}}/api/posts/{{postPublicId}}/comments
+Accept: {{contentJson}}
+Content-Type: {{contentJson}}
+Authorization: Bearer {{commenterToken}}
+
+{
+  "body": "second comment"
+}
+
+@commentPublicId2 = {{CreateComment2.response.body.data.public_id}}
+
+### Positive: DELETE — parent post author (moderation)
+DELETE {{baseUrl}}/api/comments/{{commentPublicId2}}
+Accept: {{contentJson}}
+Authorization: Bearer {{authorToken}}

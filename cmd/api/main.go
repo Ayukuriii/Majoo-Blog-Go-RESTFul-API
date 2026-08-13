@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"blog-api/internal/comment"
 	"blog-api/internal/config"
 	"blog-api/internal/database"
 	"blog-api/internal/middleware"
@@ -47,6 +48,9 @@ func main() {
 	postRepo := post.NewRepository(db)
 	postService := post.NewService(postRepo, userRepo, db, validate)
 
+	commentRepo := comment.NewRepository(db)
+	commentService := comment.NewService(commentRepo, postRepo, userRepo, db, validate)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -58,6 +62,7 @@ func main() {
 
 	user.RegisterRoutes(mux, userService, auth)
 	post.RegisterRoutes(mux, postService, auth)
+	comment.RegisterRoutes(mux, commentService, auth)
 
 	addr := cfg.Addr()
 	srv := &http.Server{

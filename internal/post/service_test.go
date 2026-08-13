@@ -193,6 +193,13 @@ type stubRepo struct {
 
 func (s *stubRepo) WithTx(*gorm.DB) Repository          { return s }
 func (s *stubRepo) Create(context.Context, *Post) error { return nil }
+func (s *stubRepo) GetByID(context.Context, uint64) (*Post, error) {
+	if s.post == nil {
+		return nil, ErrNotFound
+	}
+	cp := *s.post
+	return &cp, nil
+}
 func (s *stubRepo) GetByPublicID(context.Context, string) (*Post, error) {
 	if s.post == nil {
 		return nil, ErrNotFound

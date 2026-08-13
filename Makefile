@@ -1,4 +1,4 @@
-.PHONY: run build test migrate-install migrate-up migrate-down docker-up docker-down
+.PHONY: run build test test-coverage test-integration migrate-install migrate-up migrate-down docker-up docker-down
 
 APP_NAME := blog-api
 MIGRATE  ?= migrate
@@ -29,6 +29,11 @@ test:
 test-coverage:
 	go test ./... -coverprofile=coverage.out
 	go tool cover -html=coverage.out
+
+# HTTP handler tests against a real MySQL schema (see TESTING.md).
+# -p 1: feature packages share TEST_DB_NAME and must not truncate in parallel.
+test-integration:
+	go test -tags=integration -p 1 -count=1 ./internal/user ./internal/post ./internal/comment
 
 migrate-up:
 	$(MIGRATE) -path $(MIGRATIONS_DIR) -database "$(DATABASE_URL)" up
